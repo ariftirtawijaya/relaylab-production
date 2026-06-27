@@ -1,0 +1,130 @@
+{
+  "project_name": "RelayLab Production OS",
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast - Industrial Variation)",
+  "language": "id-ID",
+  "design_philosophy": "Industrial-professional, modern, clean, organized, easy for production operators. Focus on clear production workflow, readable tables, and high printability.",
+  "typography": {
+    "primary_font": "IBM Plex Sans, sans-serif",
+    "monospace_font": "IBM Plex Mono, monospace",
+    "headings": {
+      "h1": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
+      "h2": "text-xl sm:text-2xl font-semibold tracking-tight text-slate-900",
+      "h3": "text-lg sm:text-xl font-medium text-slate-800",
+      "h4": "text-base sm:text-lg font-medium text-slate-800"
+    },
+    "body": {
+      "default": "text-sm text-slate-700 leading-relaxed",
+      "small": "text-xs text-slate-500",
+      "mono": "font-mono text-sm text-slate-800"
+    }
+  },
+  "colors": {
+    "background": {
+      "app": "bg-slate-50",
+      "card": "bg-white",
+      "sidebar": "bg-slate-900",
+      "sidebar_hover": "bg-slate-800"
+    },
+    "primary": {
+      "main": "bg-amber-600 hover:bg-amber-700",
+      "text": "text-amber-600",
+      "border": "border-amber-600"
+    },
+    "neutral": {
+      "border": "border-slate-200",
+      "border_dark": "border-slate-700",
+      "text_main": "text-slate-900",
+      "text_muted": "text-slate-500"
+    },
+    "status": {
+      "success": {
+        "bg": "bg-green-100",
+        "text": "text-green-800",
+        "badge": "border-green-200"
+      },
+      "warning": {
+        "bg": "bg-amber-100",
+        "text": "text-amber-800",
+        "badge": "border-amber-200"
+      },
+      "danger": {
+        "bg": "bg-red-100",
+        "text": "text-red-800",
+        "badge": "border-red-200"
+      },
+      "info": {
+        "bg": "bg-blue-100",
+        "text": "text-blue-800",
+        "badge": "border-blue-200"
+      }
+    }
+  },
+  "layout": {
+    "strategy": "Control Room Grid (Dashboard)",
+    "sidebar": "Fixed width (approx 250px), dark theme for high contrast against light app area, scrollable for ~15 modules. Collapsible on tablet.",
+    "topbar": "Sticky, white background, breadcrumb navigation, user profile, print buttons.",
+    "content_area": "Generous padding (p-4 md:p-6), max-w-screen-2xl mx-auto.",
+    "cards": "Flat, 1px border-slate-200, shadow-sm, rounded-md (industrial precision, no large rounded corners)."
+  },
+  "components": {
+    "tables": {
+      "style": "Dense, striped rows for readability, sticky header.",
+      "padding": "p-2 or p-3",
+      "typography": "text-sm",
+      "actions": "Right-aligned action buttons (Edit, Print, Delete) with text or clear icons."
+    },
+    "badges": {
+      "style": "Rounded-full, px-2.5 py-0.5, text-xs font-semibold, 1px solid border."
+    },
+    "buttons": {
+      "primary": "bg-amber-600 text-white rounded-md px-4 py-2 hover:bg-amber-700 focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors",
+      "secondary": "bg-white text-slate-700 border border-slate-300 rounded-md px-4 py-2 hover:bg-slate-50 transition-colors",
+      "print": "bg-slate-800 text-white rounded-md px-4 py-2 hover:bg-slate-900 flex items-center gap-2"
+    },
+    "forms": {
+      "inputs": "Border-slate-300 rounded-md focus:border-amber-500 focus:ring-amber-500 text-sm",
+      "labels": "text-sm font-medium text-slate-700 mb-1 block"
+    }
+  },
+  "print_styles": {
+    "css_directive": "@media print",
+    "rules": [
+      "Hide sidebar, topbar, and all navigation elements.",
+      "Remove background colors from cards, borders to solid black (border-black).",
+      "Expand tables to 100% width, use pt/cm for typography sizing if necessary.",
+      "Ensure QR codes on Bundle Labels render at exact readable size (e.g., 3cm x 3cm) with high contrast.",
+      "Force page breaks for specific modules (e.g., page-break-after: always for Batch Color Sheet vs Bundle Label)."
+    ]
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "Regular or Bold weight, dense and professional.",
+    "installation": "yarn add @phosphor-icons/react"
+  },
+  "media": {
+    "images": [
+      {
+        "category": "login_background",
+        "url": "https://images.pexels.com/photos/10031804/pexels-photo-10031804.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Spacious factory interior featuring large overhead cranes and metal walkways."
+      },
+      {
+        "category": "product_placeholder",
+        "url": "https://images.unsplash.com/photo-1562877773-c6dd55a1415e",
+        "description": "Automotive electronics relay / red coated wires"
+      }
+    ]
+  },
+  "testing": {
+    "required_attributes": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case."
+  },
+  "instructions_to_main_agent": [
+    "Use Shadcn UI components but override border radiuses to be sharper (e.g., rounded-md instead of rounded-lg or xl) for an industrial look.",
+    "Implement pure CSS @media print for the Cutting Sheet, Bundle Label, and QC Checklist.",
+    "Use a robust table component to handle dense data like 'Product Recipe' and 'Pin Map'.",
+    "Ensure 'Batch Color Sheet' incorporates clear warning UI (yellow/red text or icons) for substituted cable colors.",
+    "Generate QR Codes using a library like 'qrcode.react' for the Bundle Labels.",
+    "Ensure all Bahasa Indonesia text is clear and formal (e.g., 'Simpan', 'Cetak', 'Ubah', 'Hapus', 'Perintah Kerja')."
+  ]
+}
