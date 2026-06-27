@@ -45,6 +45,16 @@ mandatory-color cables like power/ground).
 - **Training Matrix recommendation** — `GET /api/training-matrix?product_sku=X&qualified_only=true` filter; WO creation dialog auto-shows operator badges for the chosen product (Bisa mandiri / Trainer only)
 - **Backend tests** — `/app/backend/tests/test_relaylab_backend.py` 39/39 pass
 
+## Phase P2A (v1.2, Feb 2026) — Product Versioning & Clone
+- Added `parent_sku`, `source_sku`, `version_group` fields to Product model
+- `GET /api/products/{sku}/suggest-version` (Admin) auto-suggests next SKU (V1 → V2 → V3) by regex
+- `POST /api/products/{sku}/clone` (Admin) deep-copies selected sub-collections (recipe, bundles, work instructions, pin map, QC template, common mistakes) with regenerated unique ids; sets versioning relations on new and source
+- Auto revision entry on new product: "Clone produk" + catatan_approval "Clone dari {source}"; on old product (when `hold_old=true`) Hold revision with new SKU mentioned and status set to Hold
+- Frontend `CloneProductDialog` with prefill, all-checked-by-default copy options, status (Draft/Trial), hold_old checkbox; SKU collision toast; success → navigates to new product
+- Frontend `ProductDetail`: "Buat Versi Baru" button (Admin only), Parent/Source/Version Group info card with link to parent
+- Frontend `Products` list: new Versioning column with Original / Clone / Latest / N-versi badges grouped by `version_group`
+- Backend tests: 51/51 (12 new P2A tests)
+
 ## Backlog (P1)
 - Foto upload for bundles/instructions/mistakes (object storage)
 - Edit UI for product recipe/bundles/work-instructions/pin-map (currently CRUD by JSON; structure is editable but UI forms not yet built)
