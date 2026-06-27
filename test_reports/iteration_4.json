@@ -1,0 +1,23 @@
+{
+  "summary": "Phase P2A (Product Versioning & Clone) — 51/51 pytest GREEN (added new TestP2AClone with 12 tests; previous 39 still pass). Frontend e2e via Playwright: all 5 review items GREEN. Suggest-version returns V2 prefill for Admin, increments to V3 after V2 exists, returns 403 for QC/Production. Clone endpoint copies sub-collections with regenerated unique ids, sets parent_sku/source_sku/version_group, writes 1 revision on new product ('Clone produk', diubah_oleh=Arif, catatan_approval='Clone dari RFL-AOD-H11-V1'). hold_old=true → source status='Hold' + Hold revision with 'versi baru: <new_sku>'. Selective copy honoured (only opted-in collections populated). Duplicate SKU → 400 with 'sudah dipakai'. Non-existent source → 404. Frontend: CloneProductDialog opens from Admin-only 'Buat Versi Baru' button (data-testid=clone-product-btn). Prefill correct (sku=RFL-AOD-H11-V2, versi=V2, nama matches source). All clone-opt-* checkboxes default checked, clone-hold-old default unchecked. Editing SKU to RFL-STD-H11-V1, name, unchecking copy_common_mistakes → submit → toast success → navigates to /products/RFL-STD-H11-V1; page shows product-parent-link pointing to RFL-AOD-H11-V1 and 'VERSION GROUP: RFL-AOD-H11-V1' card. Products list shows Original + '2 versi' on V1 row, Clone + Latest + '2 versi' on STD-V1 row. SKU collision UI: typing existing SKU into dialog and submitting shows 'sudah dipakai' toast and dialog remains open. Role gating verified — REDI (Production) and LENI (QC) have ZERO clone-product-btn elements on /products/RFL-AOD-H11-V1. Cleanup completed (deleted V2/V3/STD-V1 + cascade subcollections + reset V1.version_group/status='Released').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_relaylab_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "_suggest_next_sku regex /^(.+?)V(\\d+)$/ correctly matches greedy-min so 'RFL-AOD-H11-V1' → prefix='RFL-AOD-H11-' + n=2. Fallback (no V<n> suffix) appends '-V2' as documented.",
+    "Clone endpoint regenerates id on every cloned sub-doc (recipe, bundles, WI, pin-map, qc-template, common-mistakes) — verified uniqueness in test_cloned_subresources_persisted.",
+    "version_group default = source['sku'] if source has no version_group; source is auto-patched to share the same group. Good.",
+    "qc_template clone copies the *single* template document (correctly, since model is one-per-sku) and reports copied['qc_template'] = len(items). Verified 10.",
+    "Selective copy: keys in 'copied' dict are only present for sections that were actually requested AND had rows (e.g., copy_common_mistakes=False → 'common_mistakes' absent). Frontend should treat missing keys as 0 — current Products page doesn't read this dict so no issue.",
+    "Minor: clone payload validation — backend does not enforce SKU format (e.g., must match /[A-Z0-9-]+/). Currently any string accepted. Low priority (Admin-only)."
+  ],
+  "updated_files": ["/app/backend/tests/test_relaylab_backend.py"],
+  "success_rate": {"backend": "100% (51/51)", "frontend": "100% on all 5 P2A frontend review items"},
+  "test_credentials": "arif/admin123 (Admin), redi/prod123 (Production), leni/qc123 (QC) — verified working",
+  "seed_data_creation": "Test creates RFL-AOD-H11-V2, RFL-AOD-H11-V3, RFL-STD-H11-V1 during test class; cleanup fixture + post-run mongo script removes all of them and resets V1.version_group/status='Released'. Confirmed db state clean after run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase P2A all 16 review items GREEN — no fixes needed by testing agent. Seeded V1 (RFL-AOD-H11-V1, Released) intact with no parent/source/version_group fields. Note: clone endpoint regex /^(.+?)V(\\d+)$/ is greedy-min so any SKU ending with V<n> increments; SKUs not matching fall back to '-V2'. CloneProductDialog data-testids: clone-product-btn, clone-sku, clone-versi, clone-nama, clone-status, clone-catatan, clone-opt-{copy_recipe|copy_bundles|copy_work_instructions|copy_pin_map|copy_qc_template|copy_common_mistakes}, clone-hold-old, clone-submit. ProductDetail data-testids: product-parent-link. Products list rows: product-row-{sku}, badges rendered inline ('Original'/'Clone'/'Latest'/'<N> versi').",
+  "rca_of_the_issue": "N/A — no bugs found."
+}

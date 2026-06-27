@@ -82,8 +82,27 @@ class Product(BaseModel):
     konfigurasi: Optional[str] = None
     catatan_teknis: Optional[str] = None
     approved_by: Optional[str] = None
+    # versioning relations
+    parent_sku: Optional[str] = None  # immediate parent (clone source)
+    source_sku: Optional[str] = None  # original (root) SKU; for traceability
+    version_group: Optional[str] = None  # shared identifier for all versions; defaults to root sku
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
+
+
+class CloneProductInput(BaseModel):
+    new_sku: str
+    new_nama_produk: str
+    new_versi: str = "V2"
+    new_status: Literal["Draft", "Trial"] = "Draft"
+    catatan: Optional[str] = None
+    copy_recipe: bool = True
+    copy_bundles: bool = True
+    copy_work_instructions: bool = True
+    copy_pin_map: bool = True
+    copy_qc_template: bool = True
+    copy_common_mistakes: bool = True
+    hold_old: bool = False
 
 
 # ---------- Cable Functions ----------

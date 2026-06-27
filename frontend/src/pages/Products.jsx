@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { PageHeader, StatusBadge, Section } from "@/components/Common";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useAuth, hasRole } from "@/lib/auth";
-import { Plus, Search, Eye } from "lucide-react";
+import { Plus, Search, Eye, GitBranch } from "lucide-react";
 import { PRODUCT_STATUSES, fmtDate } from "@/lib/utils-app";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
@@ -67,6 +68,21 @@ function NewProductDialog({ onCreated }) {
   );
 }
 
+function VersionBadge({ p, groups, latestSkuByGroup }) {
+  const g = p.version_group || p.sku;
+  const groupSize = (groups[g] || []).length;
+  const isLatest = latestSkuByGroup[g] === p.sku;
+  const isClone = !!p.source_sku;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {!isClone && <Badge variant="outline" className="text-xs">Original</Badge>}
+      {isClone && <Badge variant="outline" className="text-xs bg-amber-50 text-amber-800 border-amber-200">Clone</Badge>}
+      {isLatest && groupSize > 1 && <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-800 border-emerald-200">Latest</Badge>}
+      {groupSize > 1 && <Badge variant="outline" className="text-xs"><GitBranch className="w-3 h-3 mr-0.5" />{groupSize} versi</Badge>}
+    </div>
+  );
+}
+
 export default function Products() {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
@@ -81,6 +97,15 @@ export default function Products() {
     setItems(data);
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [q, status]);
+
+  // Compute version badges: group by version_group, mark Latest (highest created_at) per group
+  const groups = {};
+  items.forEach((p) => {
+    const g = p.version_group || p.sku;
+    (groups[g] = groups[g] || []).push(p);
+  });
+  Object.values(groups).forEach((arr) => arr.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")));
+  const latestSkuByGroup = Object.fromEntries(Object.entries(groups).map(([g, arr]) => [g, arr[0].sku]));
 
   return (
     <div>
@@ -110,6 +135,7 @@ export default function Products() {
               <TableHead>Nama Produk</TableHead>
               <TableHead>Kategori</TableHead>
               <TableHead>Versi</TableHead>
+              <TableHead>Versioning</TableHead>
               <TableHead>Kapasitas</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Dibuat</TableHead>
@@ -126,6 +152,7 @@ export default function Products() {
                 </TableCell>
                 <TableCell>{p.kategori || "-"}</TableCell>
                 <TableCell className="mono">{p.versi}</TableCell>
+                <TableCell><VersionBadge p={p} groups={groups} latestSkuByGroup={latestSkuByGroup} /></TableCell>
                 <TableCell className="mono">{p.kapasitas_normal}/hari</TableCell>
                 <TableCell><StatusBadge status={p.status} /></TableCell>
                 <TableCell className="text-xs text-slate-500">{fmtDate(p.created_at)}</TableCell>
@@ -137,7 +164,7 @@ export default function Products() {
               </TableRow>
             ))}
             {items.length === 0 && (
-              <TableRow><TableCell colSpan={8} className="text-center text-slate-500 py-8">Tidak ada produk.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center text-slate-500 py-8">Tidak ada produk.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>

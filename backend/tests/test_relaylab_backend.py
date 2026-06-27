@@ -434,3 +434,192 @@ class TestTrainingFilter:
         assert r.status_code == 200
         names = {row["nama_karyawan"] for row in r.json()}
         assert "Fauzi" in names
+
+
+# ---------- P2A: PRODUCT VERSIONING & CLONE ----------
+SRC_SKU = "RFL-AOD-H11-V1"
+
+
+def _delete_product_cascade(admin, sku):
+    """Helper: hard-delete a product and its sub-collections via mongo-shell-like API."""
+    # Backend has no DELETE /products/{sku} — use direct mongo via a small admin endpoint?
+    # Fallback: rely on uniqueness reset by skipping if not present.
+    pass
+
+
+def _cleanup_versions(admin):
+    """Remove any test-created V2/V3 products and reset V1 version_group."""
+    import pymongo, os
+    from dotenv import load_dotenv
+    load_dotenv("/app/backend/.env")
+    cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+    db_name = os.environ.get("DB_NAME", "test_database")
+    db = cli[db_name]
+    test_skus = ["RFL-AOD-H11-V2", "RFL-AOD-H11-V3", "RFL-STD-H11-V1"]
+    for sku in test_skus:
+        db.products.delete_many({"sku": sku})
+        db.product_cables.delete_many({"product_sku": sku})
+        db.product_bundles.delete_many({"product_sku": sku})
+        db.work_instructions.delete_many({"product_sku": sku})
+        db.relay_pin_maps.delete_many({"product_sku": sku})
+        db.qc_templates.delete_many({"product_sku": sku})
+        db.common_mistakes.delete_many({"product_sku": sku})
+        db.revision_history.delete_many({"product_sku": sku})
+    # Reset V1 source
+    db.products.update_one({"sku": SRC_SKU}, {"$unset": {"version_group": "", "parent_sku": "", "source_sku": ""}, "$set": {"status": "Released"}})
+    # Remove revision rows about clone/hold on V1
+    db.revision_history.delete_many({"product_sku": SRC_SKU, "bagian_berubah": {"$in": ["Status"]}, "alasan": {"$regex": "versi baru"}})
+
+
+@pytest.fixture(scope="class", autouse=True)
+def cleanup_versions_around(request):
+    """Run cleanup before AND after the P2A class."""
+    if request.cls.__name__ == "TestP2AClone":
+        # Need an admin session for cleanup
+        s = _sess(ADMIN)
+        _cleanup_versions(s)
+        yield
+        _cleanup_versions(s)
+    else:
+        yield
+
+
+class TestP2AClone:
+    NEW_SKU = "RFL-AOD-H11-V2"
+
+    def test_suggest_version_admin_v2(self, admin):
+        r = admin.get(f"{API}/products/{SRC_SKU}/suggest-version")
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["new_sku"] == "RFL-AOD-H11-V2"
+        assert d["new_versi"] == "V2"
+        assert d["new_nama_produk"]
+
+    def test_suggest_version_qc_403(self, qc):
+        r = qc.get(f"{API}/products/{SRC_SKU}/suggest-version")
+        assert r.status_code == 403
+
+    def test_suggest_version_prod_403(self, prod):
+        r = prod.get(f"{API}/products/{SRC_SKU}/suggest-version")
+        assert r.status_code == 403
+
+    def test_clone_source_not_found(self, admin):
+        r = admin.post(f"{API}/products/NONEXISTENT/clone", json={
+            "new_sku": "X-V2", "new_nama_produk": "x"
+        })
+        assert r.status_code == 404
+
+    def test_clone_role_prod_403(self, prod):
+        r = prod.post(f"{API}/products/{SRC_SKU}/clone", json={
+            "new_sku": "RFL-AOD-H11-V2", "new_nama_produk": "x"
+        })
+        assert r.status_code == 403
+
+    def test_clone_full_copy_v2(self, admin):
+        r = admin.post(f"{API}/products/{SRC_SKU}/clone", json={
+            "new_sku": "RFL-AOD-H11-V2",
+            "new_nama_produk": "Foglamp AOD V2",
+            "new_versi": "V2",
+            "new_status": "Draft",
+            "copy_recipe": True, "copy_bundles": True,
+            "copy_work_instructions": True, "copy_pin_map": True,
+            "copy_qc_template": True, "copy_common_mistakes": True,
+            "hold_old": False,
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        p = d["product"]
+        assert p["sku"] == "RFL-AOD-H11-V2"
+        assert p["parent_sku"] == SRC_SKU
+        assert p["source_sku"] == SRC_SKU
+        assert p["version_group"] == SRC_SKU
+        c = d["copied"]
+        assert c.get("recipe") == 17
+        assert c.get("bundles") == 10
+        assert c.get("work_instructions") == 10
+        assert c.get("pin_map") == 3
+        assert c.get("qc_template") == 10
+        assert c.get("common_mistakes") >= 1
+        # source now has version_group too
+        src = admin.get(f"{API}/products/{SRC_SKU}").json()
+        assert src["version_group"] == SRC_SKU
+
+    def test_cloned_subresources_persisted(self, admin):
+        new = "RFL-AOD-H11-V2"
+        assert admin.get(f"{API}/products/{new}/recipe").status_code == 200
+        rec = admin.get(f"{API}/products/{new}/recipe").json()
+        assert len(rec) == 17
+        # ids must differ from source
+        src_rec = admin.get(f"{API}/products/{SRC_SKU}/recipe").json()
+        assert set(r["id"] for r in rec).isdisjoint(set(r["id"] for r in src_rec))
+
+        assert len(admin.get(f"{API}/products/{new}/bundles").json()) == 10
+        assert len(admin.get(f"{API}/products/{new}/pin-map").json()) == 3
+        tmpl = admin.get(f"{API}/products/{new}/qc-template").json()
+        assert len(tmpl["items"]) == 10
+        assert len(admin.get(f"{API}/products/{new}/common-mistakes").json()) >= 1
+
+    def test_revision_log_on_new(self, admin):
+        revs = admin.get(f"{API}/products/RFL-AOD-H11-V2/revisions").json()
+        assert len(revs) == 1
+        r0 = revs[0]
+        assert r0["bagian_berubah"] == "Clone produk"
+        assert r0["diubah_oleh"] == "Arif"
+        assert r0.get("catatan_approval") == f"Clone dari {SRC_SKU}"
+
+    def test_duplicate_sku_rejected(self, admin):
+        r = admin.post(f"{API}/products/{SRC_SKU}/clone", json={
+            "new_sku": "RFL-AOD-H11-V2", "new_nama_produk": "dup"
+        })
+        assert r.status_code == 400
+        assert "sudah dipakai" in r.json().get("detail", "")
+
+    def test_suggest_increments_to_v3(self, admin):
+        r = admin.get(f"{API}/products/{SRC_SKU}/suggest-version").json()
+        assert r["new_sku"] == "RFL-AOD-H11-V3"
+
+    def test_clone_hold_old_v3(self, admin):
+        # create V3 with hold_old=true
+        r = admin.post(f"{API}/products/{SRC_SKU}/clone", json={
+            "new_sku": "RFL-AOD-H11-V3", "new_nama_produk": "V3",
+            "new_versi": "V3", "new_status": "Draft",
+            "copy_recipe": True, "copy_bundles": True,
+            "copy_work_instructions": True, "copy_pin_map": True,
+            "copy_qc_template": True, "copy_common_mistakes": True,
+            "hold_old": True,
+        })
+        assert r.status_code == 200, r.text
+        src = admin.get(f"{API}/products/{SRC_SKU}").json()
+        assert src["status"] == "Hold"
+        # find revision on source about hold
+        revs = admin.get(f"{API}/products/{SRC_SKU}/revisions").json()
+        hold_rev = [x for x in revs if "Hold" in (x.get("alasan") or "")]
+        assert hold_rev, f"missing Hold revision: {revs}"
+        assert "RFL-AOD-H11-V3" in hold_rev[0]["alasan"]
+
+    def test_clone_selective_copy(self, admin):
+        # First, restore V1 to Released so it can be cloned again from a clean source
+        # Use STD SKU (different prefix) to test fallback -V2 path
+        r = admin.post(f"{API}/products/{SRC_SKU}/clone", json={
+            "new_sku": "RFL-STD-H11-V1",
+            "new_nama_produk": "Selective",
+            "new_versi": "V1",
+            "new_status": "Draft",
+            "copy_recipe": True, "copy_bundles": True,
+            "copy_work_instructions": False, "copy_pin_map": False,
+            "copy_qc_template": False, "copy_common_mistakes": False,
+            "hold_old": False,
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()["copied"]
+        assert d.get("recipe") == 17
+        assert d.get("bundles") == 10
+        assert "work_instructions" not in d
+        assert "pin_map" not in d
+        assert "qc_template" not in d
+        assert "common_mistakes" not in d
+        # Verify persistence
+        assert len(admin.get(f"{API}/products/RFL-STD-H11-V1/pin-map").json()) == 0
+        assert len(admin.get(f"{API}/products/RFL-STD-H11-V1/common-mistakes").json()) == 0
+        tmpl = admin.get(f"{API}/products/RFL-STD-H11-V1/qc-template").json()
+        assert len(tmpl["items"]) == 0

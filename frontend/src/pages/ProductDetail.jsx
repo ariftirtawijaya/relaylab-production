@@ -16,6 +16,8 @@ import RecipeEditor from "@/components/editors/RecipeEditor";
 import BundleEditor from "@/components/editors/BundleEditor";
 import PinMapEditor from "@/components/editors/PinMapEditor";
 import QcTemplateEditor from "@/components/editors/QcTemplateEditor";
+import CloneProductDialog from "@/components/CloneProductDialog";
+import { GitBranch } from "lucide-react";
 
 export default function ProductDetail() {
   const { sku } = useParams();
@@ -28,6 +30,7 @@ export default function ProductDetail() {
   const [mistakes, setMistakes] = useState([]);
   const [revisions, setRevisions] = useState([]);
   const [editMode, setEditMode] = useState(null); // 'recipe' | 'bundles' | 'pinmap' | 'qc' | null
+  const [cloneOpen, setCloneOpen] = useState(false);
 
   const load = async () => {
     const [p, r, b, pm, qc, m, rev] = await Promise.all([
@@ -66,8 +69,13 @@ export default function ProductDetail() {
         title={product.nama_produk}
         subtitle={<div className="flex items-center gap-2 font-mono text-sm">{product.sku} <StatusBadge status={product.status} /></div>}
         actions={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Link to="/products"><Button variant="outline"><ArrowLeft className="w-4 h-4 mr-2" />Kembali</Button></Link>
+            {hasRole(user, "Admin") && (
+              <Button data-testid="clone-product-btn" onClick={() => setCloneOpen(true)} variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                <GitBranch className="w-4 h-4 mr-2" />Buat Versi Baru
+              </Button>
+            )}
             {hasRole(user, "Admin") && product.status !== "Released" && (
               <Button data-testid="approve-product" onClick={approve} className="bg-emerald-600 hover:bg-emerald-700 text-white"><CheckCircle2 className="w-4 h-4 mr-2" />Approve Released</Button>
             )}
@@ -75,12 +83,30 @@ export default function ProductDetail() {
         }
       />
 
+      <CloneProductDialog product={product} open={cloneOpen} setOpen={setCloneOpen} />
+
       <Section className="mb-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div><div className="text-slate-500 text-xs uppercase">Versi</div><div className="font-mono">{product.versi}</div></div>
           <div><div className="text-slate-500 text-xs uppercase">Kategori</div><div>{product.kategori || "-"}</div></div>
           <div><div className="text-slate-500 text-xs uppercase">Kapasitas / hari</div><div className="font-mono">{product.kapasitas_normal} pcs</div></div>
           <div><div className="text-slate-500 text-xs uppercase">Approved by</div><div>{product.approved_by || "-"}</div></div>
+          {(product.parent_sku || product.source_sku || product.version_group) && (
+            <div className="col-span-2 md:col-span-4 border-t pt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs">
+              {product.parent_sku && (
+                <div>
+                  <span className="text-slate-500 uppercase">Parent SKU: </span>
+                  <Link to={`/products/${product.parent_sku}`} className="font-mono text-amber-700 hover:underline" data-testid="product-parent-link">{product.parent_sku}</Link>
+                </div>
+              )}
+              {product.source_sku && product.source_sku !== product.parent_sku && (
+                <div><span className="text-slate-500 uppercase">Original SKU: </span><Link to={`/products/${product.source_sku}`} className="font-mono text-amber-700 hover:underline">{product.source_sku}</Link></div>
+              )}
+              {product.version_group && (
+                <div><span className="text-slate-500 uppercase">Version Group: </span><span className="font-mono">{product.version_group}</span></div>
+              )}
+            </div>
+          )}
           <div className="col-span-2 md:col-span-4"><div className="text-slate-500 text-xs uppercase">Konfigurasi</div><div>{product.konfigurasi || "-"}</div></div>
           <div className="col-span-2 md:col-span-4"><div className="text-slate-500 text-xs uppercase">Deskripsi</div><div className="text-slate-700">{product.deskripsi || "-"}</div></div>
         </div>

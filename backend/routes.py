@@ -8,7 +8,7 @@ from models import (
     Product, CableFunction, MachineProgram, ProductCable, ProductBundle,
     WorkInstruction, RelayPinMap, QcChecklistTemplate, CommonMistake, RevisionHistory,
     WorkOrder, WorkOrderCreateInput, WorkOrderUpdateInput, BatchColor, BatchColorInput,
-    QcResult, QcResultInput, TrainingMatrix, gen_id, now_iso,
+    QcResult, QcResultInput, TrainingMatrix, CloneProductInput, gen_id, now_iso,
 )
 from auth import (
     hash_password, verify_password, make_session_token, session_expiry_iso,
@@ -198,6 +198,145 @@ async def approve_product(sku: str, request: Request, user: dict = Depends(requi
         {"$set": {"status": "Released", "approved_by": user["name"], "updated_at": now_iso()}},
     )
     return await db.products.find_one({"sku": sku}, {"_id": 0})
+
+
+import re
+
+
+def _suggest_next_sku(base_sku: str, existing: set) -> str:
+    m = re.match(r"^(.+?)V(\d+)$", base_sku)
+    if m:
+        prefix, n = m.group(1), int(m.group(2)) + 1
+    else:
+        prefix, n = base_sku + "-V", 2
+    while f"{prefix}V{n}" in existing:
+        n += 1
+    return f"{prefix}V{n}"
+
+
+@router.get("/products/{sku}/suggest-version")
+async def suggest_version(sku: str, request: Request, _: dict = Depends(require_roles("Admin"))):
+    db = get_db(request)
+    source = await db.products.find_one({"sku": sku}, {"_id": 0})
+    if not source:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+    existing = {p["sku"] async for p in db.products.find({}, {"_id": 0, "sku": 1})}
+    next_sku = _suggest_next_sku(sku, existing)
+    # also suggest next versi label (V2 if current V1, else increment)
+    m = re.match(r"^V(\d+)$", source.get("versi") or "V1")
+    next_versi = f"V{int(m.group(1)) + 1}" if m else "V2"
+    return {"new_sku": next_sku, "new_versi": next_versi, "new_nama_produk": source["nama_produk"]}
+
+
+@router.post("/products/{sku}/clone")
+async def clone_product(sku: str, payload: CloneProductInput, request: Request, user: dict = Depends(require_roles("Admin"))):
+    db = get_db(request)
+    source = await db.products.find_one({"sku": sku}, {"_id": 0})
+    if not source:
+        raise HTTPException(status_code=404, detail="Produk sumber tidak ditemukan")
+    if await db.products.find_one({"sku": payload.new_sku}):
+        raise HTTPException(status_code=400, detail=f"SKU {payload.new_sku} sudah dipakai")
+
+    version_group = source.get("version_group") or source["sku"]
+    new_product = Product(
+        sku=payload.new_sku,
+        nama_produk=payload.new_nama_produk,
+        nama_pendek=source.get("nama_pendek"),
+        kategori=source.get("kategori"),
+        versi=payload.new_versi,
+        status=payload.new_status,
+        kapasitas_normal=source.get("kapasitas_normal", 0),
+        deskripsi=source.get("deskripsi"),
+        konfigurasi=source.get("konfigurasi"),
+        catatan_teknis=source.get("catatan_teknis"),
+        parent_sku=source["sku"],
+        source_sku=source.get("source_sku") or source["sku"],
+        version_group=version_group,
+    )
+    await db.products.insert_one(new_product.model_dump())
+    # ensure source has version_group too
+    if not source.get("version_group"):
+        await db.products.update_one({"sku": source["sku"]}, {"$set": {"version_group": version_group}})
+
+    copied = {}
+
+    if payload.copy_recipe:
+        rows = await db.product_cables.find({"product_sku": sku}, {"_id": 0}).to_list(2000)
+        for r in rows:
+            r["id"] = gen_id()
+            r["product_sku"] = payload.new_sku
+        if rows:
+            await db.product_cables.insert_many(rows)
+        copied["recipe"] = len(rows)
+
+    if payload.copy_bundles:
+        rows = await db.product_bundles.find({"product_sku": sku}, {"_id": 0}).to_list(500)
+        for r in rows:
+            r["id"] = gen_id()
+            r["product_sku"] = payload.new_sku
+        if rows:
+            await db.product_bundles.insert_many(rows)
+        copied["bundles"] = len(rows)
+
+    if payload.copy_work_instructions:
+        rows = await db.work_instructions.find({"product_sku": sku}, {"_id": 0}).to_list(500)
+        for r in rows:
+            r["id"] = gen_id()
+            r["product_sku"] = payload.new_sku
+        if rows:
+            await db.work_instructions.insert_many(rows)
+        copied["work_instructions"] = len(rows)
+
+    if payload.copy_pin_map:
+        rows = await db.relay_pin_maps.find({"product_sku": sku}, {"_id": 0}).to_list(100)
+        for r in rows:
+            r["id"] = gen_id()
+            r["product_sku"] = payload.new_sku
+        if rows:
+            await db.relay_pin_maps.insert_many(rows)
+        copied["pin_map"] = len(rows)
+
+    if payload.copy_qc_template:
+        tmpl = await db.qc_templates.find_one({"product_sku": sku}, {"_id": 0})
+        if tmpl:
+            tmpl["id"] = gen_id()
+            tmpl["product_sku"] = payload.new_sku
+            await db.qc_templates.insert_one(tmpl)
+            copied["qc_template"] = len(tmpl.get("items", []))
+
+    if payload.copy_common_mistakes:
+        rows = await db.common_mistakes.find({"product_sku": sku}, {"_id": 0}).to_list(500)
+        for r in rows:
+            r["id"] = gen_id()
+            r["product_sku"] = payload.new_sku
+        if rows:
+            await db.common_mistakes.insert_many(rows)
+        copied["common_mistakes"] = len(rows)
+
+    # Revision entries
+    note_new = payload.catatan or f"Produk dibuat dari clone SKU: {sku}"
+    await db.revision_history.insert_one({
+        "id": gen_id(), "product_sku": payload.new_sku, "versi": payload.new_versi,
+        "tanggal": now_iso(), "diubah_oleh": user["name"],
+        "bagian_berubah": "Clone produk",
+        "alasan": note_new,
+        "catatan_approval": f"Clone dari {sku}",
+    })
+
+    if payload.hold_old:
+        await db.products.update_one(
+            {"sku": sku}, {"$set": {"status": "Hold", "updated_at": now_iso()}},
+        )
+        await db.revision_history.insert_one({
+            "id": gen_id(), "product_sku": sku, "versi": source.get("versi", "V1"),
+            "tanggal": now_iso(), "diubah_oleh": user["name"],
+            "bagian_berubah": "Status",
+            "alasan": f"Produk ditandai Hold karena dibuat versi baru: {payload.new_sku}",
+            "catatan_approval": None,
+        })
+
+    new_product_doc = await db.products.find_one({"sku": payload.new_sku}, {"_id": 0})
+    return {"product": new_product_doc, "copied": copied}
 
 
 # ---- Product sub-resources ----
