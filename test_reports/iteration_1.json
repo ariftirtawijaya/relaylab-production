@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 1 testing for RelayLab Production OS. Backend: 32/32 pytest tests PASSED (auth, products, recipe, bundles, pin map, QC template, cable functions, machine programs, full WO flow including batch colors with warna_wajib + alasan validation, mark-cutting-done, bundle detail nav, QC submit Pass/Fail->WO status, role enforcement, user CRUD, dashboard stats, change-password). Frontend: login + dashboard + product detail (Recipe 17, Bundle 10, Pin Map 3, QC 10) + sidebar role restrictions (QC sees no Pengguna/Program Mesin) + logout all work. Work Order creation via UI works (WO-20260627-001 created). However, WorkOrderDetail page is STUCK on 'Memuat...' loading state due to a bug in load() — Promise.all references `cs` inside one of its own array elements before the array is resolved, making it always undefined, which triggers the early return. This blocks all WO-detail UI tests (cutting sheet UI, batch colors UI, bundle labels UI, QC submit UI, print buttons inside detail). Print pages (deep-linked /work-orders/{wo}/print/*) DO load (they fetch data independently).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "WorkOrderDetail.jsx (line 33-48 load())", "issue": "Page stuck on 'Memuat...' for ALL work orders. The 4th element of Promise.all uses cs?.data?.wo?.product_sku but `cs` is the array element name that is only bound AFTER Promise.all resolves; at definition time it is undefined. Then .catch(()=>[]) swallows the rejection and returns []. Destructuring const [cs,...]=[] makes cs undefined, triggering the early return `if (!cs) return;`. Page never renders tabs/data.", "selector": "[data-testid=\"tab-cutting\"] never appears", "priority": "CRITICAL"},
+      {"component": "ProductDetail.jsx recipe table", "issue": "Recipe TableRow lacks data-testid=\"cable-row-{code}\" (only count is verifiable via tbody tr). Spec listed this testid.", "selector": "[data-testid^=\"cable-row-\"]", "priority": "LOW"},
+      {"component": "WorkOrders list", "issue": "Spec lists nav testids as nav-products/nav-work-orders but Layout.jsx generates them as nav--products / nav--work-orders (double dash because path starts with `/`). Works but is misleading and not what the spec referenced.", "selector": "[data-testid=\"nav--products\"]", "priority": "LOW"},
+      {"component": "Dashboard / global hydration", "issue": "Console warning: 'In HTML, <div> cannot be a descendant of <p>' (hydration error). Likely a Card description/badge structure nesting block-level element inside a <p>.", "selector": "n/a", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Open Work Order detail", "issue": "API endpoints all return 200 (validated via pytest), but frontend never renders because of the Promise.all bug above. This blocks Cutting Sheet, Bundle Labels, Pin Map, and QC tabs from the WO detail.", "affected_selectors": ["[data-testid=\"tab-cutting\"]", "[data-testid=\"tab-bundle-labels\"]", "[data-testid=\"tab-qc\"]", "[data-testid=\"tab-pinmap\"]", "[data-testid=\"mark-cutting-done\"]", "[data-testid^=\"cs-row-\"]", "[data-testid^=\"bundle-open-\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_relaylab_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "FIX (CRITICAL): /app/frontend/src/pages/WorkOrderDetail.jsx load(): chain pin-map fetch AFTER cutting-sheet resolves. Simplest fix: drop the 4th Promise.all element entirely (pin-map is already fetched on its own via the line `const pmRes = await api.get(...)` below) — OR refactor to: const cs = await api.get(...); const [b,q] = await Promise.all([...]); const pmRes = await api.get(`/products/${cs.data.wo.product_sku}/pin-map`). Also remove the swallowing `.catch(() => [])` so errors surface.",
+    "ADD: data-testid=\"cable-row-{cable_code}\" on the Recipe TableRow in ProductDetail.jsx (line ~115) to match spec.",
+    "FIX: Hydration warning '<div> cannot be a descendant of <p>'. Likely inside Dashboard Card content / Badge placed inside a <p>. Replace inner <p> with <div> or remove block-level child."
+  ],
+  "critical_code_review_comments": [
+    "WorkOrderDetail.jsx load() is a textbook race-condition bug. Promise.all array literal evaluates all 4 promises synchronously; the inner reference to `cs` inside element index 3 uses the outer (undefined) variable, not the resolved value. Combined with `.catch(() => [])` it silently masks the failure. This made every WO unusable in the UI.",
+    "Swallowing fetch errors with `.catch(() => [])` everywhere prevents users (and devs) from seeing real failures. At minimum log e or toast.",
+    "Layout.jsx nav testid generation produces ugly `nav--products` (double dash) from `to.replace(/[\\/]/g, '-')` when path starts with `/`. Should strip leading `/` first.",
+    "WorkOrderDetail.jsx is large (~386 lines) — consider splitting Cutting Sheet, Bundle Labels, QC, Pin Map sections into separate sub-components."
+  ],
+  "updated_files": ["/app/backend/tests/test_relaylab_backend.py"],
+  "success_rate": {"backend": "100%", "frontend": "~55%"},
+  "test_credentials": "Admin arif/admin123, Production redi/prod123, QC leni/qc123 (from /app/memory/test_credentials.md, verified working)",
+  "seed_data_creation": "No new seed; backend seeded itself with Foglamp AOD SKU + 17 cables + 10 bundles + 14 machine programs + 10 QC items. Test created one WO-20260627-001 (deleted again in cleanup). One earlier run left WO-20260627-001 visible because cleanup step also depends on UI which was blocked.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is 100% green via /app/backend/tests/test_relaylab_backend.py (run: pytest tests/test_relaylab_backend.py -v from /app/backend). The frontend WorkOrderDetail bug is the single biggest blocker — once fixed, run the UI scripts again for: open WO detail -> tab-cutting/cs-row-* visible, set cs-color-DEV-OUT-S='Coklat' + cs-save-DEV-OUT-S -> amber bg + Substitusi label; tab-bundle-labels -> 10 wo-bundle-* cards; bundle-open-A -> /bundles/A page, bundle-prev disabled, bundle-next enabled; tab-qc -> 10 qc-row-* items, set all qc-pf-{n}='Pass', qc-submit -> status badge updates. Login redi/prod123 and leni/qc123 already verified, sidebar role hiding works.",
+  "rca_of_the_issue": "WorkOrderDetail.jsx line 34-39: Promise.all([... , api.get(`/work-orders/${woNumber}`).then(() => api.get(`/products/${(cs?.data?.wo?.product_sku) || ''}/pin-map`).catch(() => ({data: []})) ]).catch(() => []). The reference `cs` inside the .then() is the const declared as the destructuring target on the left of `=` and is undefined until Promise.all resolves. So /products//pin-map is requested → 404 → Promise.all rejects → outer .catch returns []. Then `const [cs,b,q,pm] = []` → all undefined → `if (!cs) return;` → page stays on Memuat... forever for every WO."
+}
