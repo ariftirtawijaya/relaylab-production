@@ -106,7 +106,7 @@ export default function Layout() {
               to={item.to}
               end={item.end}
               onClick={() => setOpen(false)}
-              data-testid={`nav-${item.to.replace(/[\/]/g, "-") || "home"}`}
+              data-testid={`nav-${item.to.replace(/^\//, "").replace(/\//g, "-") || "home"}`}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-5 py-2.5 text-sm transition-colors border-l-2 ${
                   isActive

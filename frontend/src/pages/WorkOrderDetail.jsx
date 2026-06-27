@@ -31,18 +31,15 @@ export default function WorkOrderDetail() {
   const [pinMap, setPinMap] = useState([]);
 
   const load = async () => {
-    const [cs, b, q, pm] = await Promise.all([
-      api.get(`/work-orders/${woNumber}/cutting-sheet`),
+    const cs = await api.get(`/work-orders/${woNumber}/cutting-sheet`);
+    setData(cs.data);
+    const [b, q, pmRes] = await Promise.all([
       api.get(`/work-orders/${woNumber}/bundles`),
       api.get(`/work-orders/${woNumber}/qc`),
-      api.get(`/work-orders/${woNumber}`).then(() => api.get(`/products/${(cs?.data?.wo?.product_sku) || ""}/pin-map`).catch(() => ({ data: [] }))),
-    ]).catch(() => []);
-    if (!cs) return;
-    setData(cs.data);
+      api.get(`/products/${cs.data.wo.product_sku}/pin-map`),
+    ]);
     setBundles(b.data.bundles);
     setQc(q.data);
-    // load pinmap with correct sku
-    const pmRes = await api.get(`/products/${cs.data.wo.product_sku}/pin-map`).catch(() => ({ data: [] }));
     setPinMap(pmRes.data);
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [woNumber]);

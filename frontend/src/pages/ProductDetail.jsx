@@ -112,7 +112,7 @@ export default function ProductDetail() {
                 {recipe.map((c) => {
                   const fn = c.cable_function || {};
                   return (
-                    <TableRow key={c.id}>
+                    <TableRow key={c.id} data-testid={`cable-row-${c.cable_code}`}>
                       <TableCell className="mono">{c.urutan}</TableCell>
                       <TableCell className="font-mono font-semibold">{c.cable_code}</TableCell>
                       <TableCell>{fn.nama_fungsi || "-"}</TableCell>

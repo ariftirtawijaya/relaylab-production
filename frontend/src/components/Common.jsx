@@ -42,7 +42,7 @@ export function PageHeader({ title, subtitle, actions, testid }) {
         <h1 data-testid={testid || "page-title"} className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
           {title}
         </h1>
-        {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
+        {subtitle && <div className="text-sm text-slate-500 mt-1">{subtitle}</div>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
