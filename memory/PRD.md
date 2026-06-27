@@ -34,6 +34,17 @@ mandatory-color cables like power/ground).
 - Users CRUD (Admin only)
 - Seed data for full RFL-AOD-H11-V1 product (17 cables, 10 bundles, 3 relays, 10 QC items, 4 mistakes, 6 employees, 14 machine programs)
 
+## Phase P1 (v1.1, Feb 2026)
+- **UI CRUD Product Recipe** — `RecipeEditor` with inline-editable table, cable-code combobox from master, bundle assignment, urutan, skun A/B, solder, catatan
+- **UI CRUD Product Bundle** — `BundleEditor` with grid cards + add/edit dialog (code, name, fungsi, urutan, instruksi singkat, target relay pin); per-bundle "Edit Work Instruction" entry
+- **UI CRUD Work Instruction** — `WorkInstructionEditor` step-by-step with reorder up/down, fields: instruksi, komponen, tools, safety, common_mistake, foto_url (placeholder)
+- **UI CRUD Relay Pin Map** — `PinMapEditor` with relay add/edit (number/name/type 4 or 5 pin) + per-pin cable_code & fungsi
+- **UI CRUD QC Template** — `QcTemplateEditor` inline items (nama, cara_tes, expected, required, reorder)
+- **Auto Revision History** — every PUT (recipe/bundles/work-instructions/pin-map/qc-template) inserts an entry in `revision_history` with diubah_oleh + bagian_berubah; for Released products, catatan_approval = "Produk Released — disarankan buat versi baru."
+- **Released product warning** — All 5 editors show AlertDialog before save when product.status='Released' (recommend create new version)
+- **Training Matrix recommendation** — `GET /api/training-matrix?product_sku=X&qualified_only=true` filter; WO creation dialog auto-shows operator badges for the chosen product (Bisa mandiri / Trainer only)
+- **Backend tests** — `/app/backend/tests/test_relaylab_backend.py` 39/39 pass
+
 ## Backlog (P1)
 - Foto upload for bundles/instructions/mistakes (object storage)
 - Edit UI for product recipe/bundles/work-instructions/pin-map (currently CRUD by JSON; structure is editable but UI forms not yet built)
