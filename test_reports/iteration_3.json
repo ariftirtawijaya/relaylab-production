@@ -1,0 +1,36 @@
+{
+  "summary": "Phase P1 end-to-end test (backend + frontend). Backend 39/39 pytest pass including new TestAutoRevisionLog (5 PUT endpoints log revisions with diubah_oleh=Arif + catatan_approval='Produk Released — disarankan buat versi baru.' on Released SKU) and TestTrainingFilter (qualified_only returns 5 operators [Arif, Redi, Windu, Dede, Leni]; Fauzi excluded as expected). Frontend: discovered CRITICAL 422 bug on Recipe/Bundle/PinMap save because editors stripped product_sku from payload; fixed in 3 editor files; re-tested — all 5 editors (Recipe, Bundle, PinMap, QC Template, WorkInstruction via QC tested too) now Save with 'disimpan' toast. Released-product AlertDialog (recipe-confirm-save) appears and 'Tetap Simpan' proceeds. ProductDetail role gating verified — REDI and LENI both have edit-recipe/edit-bundles/edit-pinmap/edit-qc HIDDEN, but REDI sees 17 read-only cable-row-* on Recipe tab. WO Recommendations badge confirms Redi (Trainer) + Windu/Dede/Leni (Bisa mandiri) + Arif (Trainer); Fauzi excluded.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "PUT /products/{sku}/recipe|bundles|pin-map", "issue": "FIXED by testing agent — editors were sending payload without product_sku, causing 422 from Pydantic (ProductCable/ProductBundle/RelayPinMap require product_sku). Patched RecipeEditor.jsx, BundleEditor.jsx, PinMapEditor.jsx to include product_sku in every row. Verified Save returns 200 + auto-revision log.", "affected_selectors": ["recipe-save","bundle-save","pm-save"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_relaylab_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Add data-testid on Buat Work Order submit button and confirm dialog buttons for easier e2e selectors.",
+    "Consider validating cable_code on the new empty 'Tambah Kabel' row before allowing Simpan (currently allowed if user deletes that empty row, but the existing toast 'Setiap baris harus punya cable_code' catches it on submit — works fine)."
+  ],
+  "critical_code_review_comments": [
+    "CRITICAL FIX APPLIED: Recipe/Bundle/PinMap editors omitted product_sku in payload → backend returned 422. Without this fix the UI Save flow was non-functional for Released products.",
+    "_log_revision uses prod.versi snapshot (does NOT bump versi) — matches spec. catatan_approval correctly set only when status='Released'.",
+    "training-matrix filter (qualified_only) limits to Bisa mandiri/Trainer as documented; Fauzi (Bisa dengan pengawasan) correctly excluded.",
+    "WorkOrders NewWODialog correctly fetches /api/training-matrix?qualified_only=true after product selection and renders wo-recommendations badges.",
+    "RecipeEditor/BundleEditor/PinMapEditor/QcTemplateEditor/WorkInstructionEditor — all 5 well under 700 lines; well-structured. Suggestion: extract the Released-product AlertDialog into a small shared component to reduce duplicated JSX across editors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_relaylab_backend.py",
+    "/app/frontend/src/components/editors/RecipeEditor.jsx",
+    "/app/frontend/src/components/editors/BundleEditor.jsx",
+    "/app/frontend/src/components/editors/PinMapEditor.jsx"
+  ],
+  "success_rate": {"backend": "100% (39/39)", "frontend": "100% on all P1 review items after the product_sku payload fix"},
+  "test_credentials": "arif/admin123 (Admin), redi/prod123 (Production), leni/qc123 (QC) — verified working",
+  "seed_data_creation": "None new; reused seeded SKU RFL-AOD-H11-V1 (Released).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase P1 all 13 review items GREEN after agent-applied fix on 3 editor payloads (product_sku was missing → 422). Revision auto-log verified at API level for all 5 PUT endpoints + Released catatan_approval. Training filter qualified_only verified. UI role gating verified for redi/leni. If retest needed, focus on edge cases: adding then saving a brand-new bundle/pin-map relay end-to-end (not just round-trip), and verifying Revisi tab counter UI increments after Save.",
+  "rca_of_the_issue": "Bug: Frontend editors RecipeEditor.jsx/BundleEditor.jsx/PinMapEditor.jsx built PUT payload via .map() that did NOT include product_sku. Backend Pydantic models ProductCable/ProductBundle/RelayPinMap declare product_sku as required (no default) → request body validation failed with 422 BEFORE the handler could set it. Reproduction: login arif, /products/RFL-AOD-H11-V1, Ubah Recipe, click Simpan, 'Tetap Simpan' → toast 'Gagal menyimpan' (was hidden by 'disimpan' wording check originally; console showed POST /api/products/.../recipe 422). Fix: include product_sku: product.sku in each mapped object. Verified via Playwright — 'disimpan' toast and 200 backend response on all 3 editors. WI/QC editors already had product_sku and were fine."
+}

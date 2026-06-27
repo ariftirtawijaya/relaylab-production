@@ -22,6 +22,7 @@ import { toast } from "sonner";
 
 function NewWODialog({ open, setOpen, onCreated }) {
   const [products, setProducts] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
   const [form, setForm] = useState({
     reseller: "", product_sku: "", qty: 100, deadline: "",
     prioritas: "Normal", catatan: "",
@@ -29,6 +30,13 @@ function NewWODialog({ open, setOpen, onCreated }) {
   useEffect(() => {
     if (open) api.get("/products", { params: { status: "Released" } }).then((r) => setProducts(r.data));
   }, [open]);
+
+  useEffect(() => {
+    if (!form.product_sku) { setRecommendations([]); return; }
+    api.get("/training-matrix", { params: { product_sku: form.product_sku, qualified_only: true } })
+      .then((r) => setRecommendations(r.data));
+  }, [form.product_sku]);
+
   const submit = async () => {
     try {
       const { data } = await api.post("/work-orders", { ...form, qty: Number(form.qty) });
@@ -50,6 +58,27 @@ function NewWODialog({ open, setOpen, onCreated }) {
               </SelectContent>
             </Select>
           </div>
+          {form.product_sku && (
+            <div data-testid="wo-recommendations" className="rounded-md border border-amber-200 bg-amber-50 p-2.5">
+              <div className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-1">Rekomendasi Operator (Bisa Kerjakan)</div>
+              {recommendations.length === 0 ? (
+                <div className="text-xs text-slate-600">Belum ada operator dengan skill <em>Bisa mandiri / Trainer</em> untuk produk ini. Update Training Matrix dulu.</div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {recommendations.map((t) => (
+                    <span key={t.id} className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
+                      t.skill_level === "Trainer"
+                        ? "bg-purple-100 text-purple-800 border-purple-200"
+                        : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    }`}>
+                      {t.nama_karyawan}
+                      <span className="opacity-70">· {t.skill_level}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Qty</Label><Input data-testid="wo-qty" type="number" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} /></div>
             <div><Label>Prioritas</Label>

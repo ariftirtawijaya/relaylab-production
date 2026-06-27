@@ -23,6 +23,25 @@ def get_db(request: Request):
     return request.app.state.db
 
 
+async def _log_revision(db, sku: str, user_name: str, section: str, note: str = ""):
+    """Append a simple audit entry to revision_history."""
+    prod = await db.products.find_one({"sku": sku}, {"_id": 0, "versi": 1, "status": 1})
+    if not prod:
+        return
+    rev = {
+        "id": gen_id(),
+        "product_sku": sku,
+        "versi": prod.get("versi", "V1"),
+        "tanggal": now_iso(),
+        "diubah_oleh": user_name,
+        "bagian_berubah": section,
+        "alasan": note or f"Perubahan otomatis pada {section}",
+        "catatan_approval": ("Produk Released — disarankan buat versi baru."
+                              if prod.get("status") == "Released" else None),
+    }
+    await db.revision_history.insert_one(rev)
+
+
 # ============ AUTH ============
 @router.post("/auth/login")
 async def login(payload: LoginInput, request: Request, response: Response):
@@ -196,7 +215,7 @@ async def get_recipe(sku: str, request: Request, _: dict = Depends(get_current_u
 
 
 @router.put("/products/{sku}/recipe")
-async def replace_recipe(sku: str, items: List[ProductCable], request: Request, _: dict = Depends(require_roles("Admin"))):
+async def replace_recipe(sku: str, items: List[ProductCable], request: Request, user: dict = Depends(require_roles("Admin"))):
     db = get_db(request)
     await db.product_cables.delete_many({"product_sku": sku})
     docs = []
@@ -205,6 +224,7 @@ async def replace_recipe(sku: str, items: List[ProductCable], request: Request, 
         docs.append(it.model_dump())
     if docs:
         await db.product_cables.insert_many(docs)
+    await _log_revision(db, sku, user["name"], "Recipe", f"Recipe diperbarui ({len(docs)} kabel)")
     return {"count": len(docs)}
 
 
@@ -215,7 +235,7 @@ async def get_bundles(sku: str, request: Request, _: dict = Depends(get_current_
 
 
 @router.put("/products/{sku}/bundles")
-async def replace_bundles(sku: str, items: List[ProductBundle], request: Request, _: dict = Depends(require_roles("Admin"))):
+async def replace_bundles(sku: str, items: List[ProductBundle], request: Request, user: dict = Depends(require_roles("Admin"))):
     db = get_db(request)
     await db.product_bundles.delete_many({"product_sku": sku})
     docs = []
@@ -224,6 +244,7 @@ async def replace_bundles(sku: str, items: List[ProductBundle], request: Request
         docs.append(it.model_dump())
     if docs:
         await db.product_bundles.insert_many(docs)
+    await _log_revision(db, sku, user["name"], "Bundles", f"Bundle diperbarui ({len(docs)} bundle)")
     return {"count": len(docs)}
 
 
@@ -237,7 +258,7 @@ async def get_work_instruction(sku: str, bundle_code: str, request: Request, _: 
 
 
 @router.put("/products/{sku}/work-instructions/{bundle_code}")
-async def save_work_instruction(sku: str, bundle_code: str, payload: WorkInstruction, request: Request, _: dict = Depends(require_roles("Admin"))):
+async def save_work_instruction(sku: str, bundle_code: str, payload: WorkInstruction, request: Request, user: dict = Depends(require_roles("Admin"))):
     db = get_db(request)
     payload.product_sku = sku
     payload.bundle_code = bundle_code
@@ -246,6 +267,7 @@ async def save_work_instruction(sku: str, bundle_code: str, payload: WorkInstruc
         {"$set": payload.model_dump()},
         upsert=True,
     )
+    await _log_revision(db, sku, user["name"], f"Work Instruction Bundle {bundle_code}", f"{len(payload.steps)} step")
     return payload
 
 
@@ -256,7 +278,7 @@ async def get_pin_map(sku: str, request: Request, _: dict = Depends(get_current_
 
 
 @router.put("/products/{sku}/pin-map")
-async def replace_pin_map(sku: str, items: List[RelayPinMap], request: Request, _: dict = Depends(require_roles("Admin"))):
+async def replace_pin_map(sku: str, items: List[RelayPinMap], request: Request, user: dict = Depends(require_roles("Admin"))):
     db = get_db(request)
     await db.relay_pin_maps.delete_many({"product_sku": sku})
     docs = []
@@ -265,6 +287,7 @@ async def replace_pin_map(sku: str, items: List[RelayPinMap], request: Request, 
         docs.append(it.model_dump())
     if docs:
         await db.relay_pin_maps.insert_many(docs)
+    await _log_revision(db, sku, user["name"], "Pin Map", f"Pin map diperbarui ({len(docs)} relay)")
     return {"count": len(docs)}
 
 
@@ -278,12 +301,13 @@ async def get_qc_template(sku: str, request: Request, _: dict = Depends(get_curr
 
 
 @router.put("/products/{sku}/qc-template")
-async def save_qc_template(sku: str, payload: QcChecklistTemplate, request: Request, _: dict = Depends(require_roles("Admin"))):
+async def save_qc_template(sku: str, payload: QcChecklistTemplate, request: Request, user: dict = Depends(require_roles("Admin"))):
     db = get_db(request)
     payload.product_sku = sku
     await db.qc_templates.update_one(
         {"product_sku": sku}, {"$set": payload.model_dump()}, upsert=True,
     )
+    await _log_revision(db, sku, user["name"], "QC Template", f"Template QC diperbarui ({len(payload.items)} item)")
     return payload
 
 
@@ -690,9 +714,14 @@ async def submit_qc(wo_number: str, payload: QcResultInput, request: Request, us
 
 # ============ TRAINING MATRIX ============
 @router.get("/training-matrix")
-async def list_training(request: Request, _: dict = Depends(get_current_user)):
+async def list_training(request: Request, _: dict = Depends(get_current_user), product_sku: Optional[str] = None, qualified_only: bool = False):
     db = get_db(request)
-    return await db.training_matrix.find({}, {"_id": 0}).to_list(2000)
+    query = {}
+    if product_sku:
+        query["product_sku"] = product_sku
+    if qualified_only:
+        query["skill_level"] = {"$in": ["Bisa mandiri", "Trainer"]}
+    return await db.training_matrix.find(query, {"_id": 0}).to_list(2000)
 
 
 @router.post("/training-matrix")

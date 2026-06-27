@@ -9,9 +9,13 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useAuth, hasRole } from "@/lib/auth";
-import { ArrowLeft, CheckCircle2, AlertTriangle, Plug } from "lucide-react";
+import { ArrowLeft, CheckCircle2, AlertTriangle, Plug, Pencil } from "lucide-react";
 import { fmtDate } from "@/lib/utils-app";
 import { toast } from "sonner";
+import RecipeEditor from "@/components/editors/RecipeEditor";
+import BundleEditor from "@/components/editors/BundleEditor";
+import PinMapEditor from "@/components/editors/PinMapEditor";
+import QcTemplateEditor from "@/components/editors/QcTemplateEditor";
 
 export default function ProductDetail() {
   const { sku } = useParams();
@@ -23,6 +27,7 @@ export default function ProductDetail() {
   const [qcTpl, setQcTpl] = useState({ items: [] });
   const [mistakes, setMistakes] = useState([]);
   const [revisions, setRevisions] = useState([]);
+  const [editMode, setEditMode] = useState(null); // 'recipe' | 'bundles' | 'pinmap' | 'qc' | null
 
   const load = async () => {
     const [p, r, b, pm, qc, m, rev] = await Promise.all([
@@ -92,7 +97,15 @@ export default function ProductDetail() {
         </TabsList>
 
         <TabsContent value="recipe">
-          <Section title="Product Recipe — Daftar Kabel">
+          {editMode === "recipe" ? (
+            <Section title="Edit Recipe">
+              <RecipeEditor product={product} onClose={() => setEditMode(null)} onSaved={load} />
+            </Section>
+          ) : (
+            <Section
+              title="Product Recipe — Daftar Kabel"
+              action={hasRole(user, "Admin") && <Button size="sm" variant="outline" onClick={() => setEditMode("recipe")} data-testid="edit-recipe"><Pencil className="w-3 h-3 mr-1" />Ubah</Button>}
+            >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -128,10 +141,20 @@ export default function ProductDetail() {
                 })}
               </TableBody>
             </Table>
-          </Section>
+            </Section>
+          )}
         </TabsContent>
 
         <TabsContent value="bundles">
+          {editMode === "bundles" ? (
+            <Section title="Edit Bundle">
+              <BundleEditor product={product} onClose={() => setEditMode(null)} onSaved={load} />
+            </Section>
+          ) : (
+            <>
+            <div className="flex justify-end mb-2">
+              {hasRole(user, "Admin") && <Button size="sm" variant="outline" onClick={() => setEditMode("bundles")} data-testid="edit-bundles"><Pencil className="w-3 h-3 mr-1" />Ubah Bundle & Instruction</Button>}
+            </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {bundles.map((b) => (
               <div key={b.bundle_code} data-testid={`bundle-card-${b.bundle_code}`} className="bg-white border border-slate-200 rounded-md p-4">
@@ -153,9 +176,20 @@ export default function ProductDetail() {
               </div>
             ))}
           </div>
+          </>
+          )}
         </TabsContent>
 
         <TabsContent value="pinmap">
+          {editMode === "pinmap" ? (
+            <Section title="Edit Pin Map">
+              <PinMapEditor product={product} onClose={() => setEditMode(null)} onSaved={load} />
+            </Section>
+          ) : (
+            <>
+            <div className="flex justify-end mb-2">
+              {hasRole(user, "Admin") && <Button size="sm" variant="outline" onClick={() => setEditMode("pinmap")} data-testid="edit-pinmap"><Pencil className="w-3 h-3 mr-1" />Ubah Pin Map</Button>}
+            </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {pinMap.map((r) => (
               <div key={r.relay_number} className="bg-white border border-slate-200 rounded-md p-4">
@@ -180,10 +214,20 @@ export default function ProductDetail() {
               </div>
             ))}
           </div>
+          </>
+          )}
         </TabsContent>
 
         <TabsContent value="qc">
-          <Section title="QC Checklist Template">
+          {editMode === "qc" ? (
+            <Section title="Edit QC Template">
+              <QcTemplateEditor product={product} onClose={() => setEditMode(null)} onSaved={load} />
+            </Section>
+          ) : (
+          <Section
+            title="QC Checklist Template"
+            action={hasRole(user, "Admin") && <Button size="sm" variant="outline" onClick={() => setEditMode("qc")} data-testid="edit-qc"><Pencil className="w-3 h-3 mr-1" />Ubah</Button>}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -207,6 +251,7 @@ export default function ProductDetail() {
               </TableBody>
             </Table>
           </Section>
+          )}
         </TabsContent>
 
         <TabsContent value="mistakes">

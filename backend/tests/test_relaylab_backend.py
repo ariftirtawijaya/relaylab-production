@@ -346,3 +346,91 @@ class TestRoles:
         assert new_user["username"] == "TEST_userx"
         # cleanup
         admin.delete(f"{API}/users/{new_user['id']}")
+
+
+
+# ---------- P1: REVISION AUTO-LOG ----------
+class TestAutoRevisionLog:
+    """Verify _log_revision triggers on PUT recipe/bundles/work-instructions/pin-map/qc-template."""
+
+    def _count(self, admin):
+        r = admin.get(f"{API}/products/{SKU}/revisions")
+        assert r.status_code == 200
+        return r.json()
+
+    def test_put_recipe_logs_revision(self, admin):
+        before = self._count(admin)
+        rec = admin.get(f"{API}/products/{SKU}/recipe").json()
+        payload = [{k: v for k, v in r.items() if k != "cable_function"} for r in rec]
+        r = admin.put(f"{API}/products/{SKU}/recipe", json=payload)
+        assert r.status_code == 200, r.text
+        after = self._count(admin)
+        assert len(after) == len(before) + 1
+        latest = after[0]
+        assert "Recipe" in latest["bagian_berubah"]
+        assert latest["diubah_oleh"] == "Arif"
+        # Released product => catatan_approval set
+        assert latest.get("catatan_approval") == "Produk Released — disarankan buat versi baru."
+
+    def test_put_bundles_logs_revision(self, admin):
+        before = self._count(admin)
+        bundles = admin.get(f"{API}/products/{SKU}/bundles").json()
+        r = admin.put(f"{API}/products/{SKU}/bundles", json=bundles)
+        assert r.status_code == 200, r.text
+        after = self._count(admin)
+        assert len(after) == len(before) + 1
+        assert "Bundles" in after[0]["bagian_berubah"]
+        assert after[0]["diubah_oleh"] == "Arif"
+
+    def test_put_work_instruction_logs_revision(self, admin):
+        before = self._count(admin)
+        wi = admin.get(f"{API}/products/{SKU}/work-instructions/A").json()
+        r = admin.put(f"{API}/products/{SKU}/work-instructions/A", json=wi)
+        assert r.status_code == 200, r.text
+        after = self._count(admin)
+        assert len(after) == len(before) + 1
+        assert "Work Instruction" in after[0]["bagian_berubah"]
+        assert "A" in after[0]["bagian_berubah"]
+
+    def test_put_pin_map_logs_revision(self, admin):
+        before = self._count(admin)
+        pm = admin.get(f"{API}/products/{SKU}/pin-map").json()
+        r = admin.put(f"{API}/products/{SKU}/pin-map", json=pm)
+        assert r.status_code == 200, r.text
+        after = self._count(admin)
+        assert len(after) == len(before) + 1
+        assert "Pin Map" in after[0]["bagian_berubah"]
+
+    def test_put_qc_template_logs_revision(self, admin):
+        before = self._count(admin)
+        tmpl = admin.get(f"{API}/products/{SKU}/qc-template").json()
+        r = admin.put(f"{API}/products/{SKU}/qc-template", json=tmpl)
+        assert r.status_code == 200, r.text
+        after = self._count(admin)
+        assert len(after) == len(before) + 1
+        assert "QC Template" in after[0]["bagian_berubah"]
+
+
+# ---------- P1: TRAINING MATRIX FILTER ----------
+class TestTrainingFilter:
+    def test_training_qualified_only_for_sku(self, admin):
+        r = admin.get(f"{API}/training-matrix", params={"product_sku": SKU, "qualified_only": "true"})
+        assert r.status_code == 200, r.text
+        rows = r.json()
+        # Per problem statement: expect Redi, Windu, Dede, Leni, Arif (Fauzi excluded)
+        for row in rows:
+            assert row["product_sku"] == SKU
+            assert row["skill_level"] in ["Bisa mandiri", "Trainer"]
+        names = sorted({r["nama_karyawan"] for r in rows})
+        # Fauzi must be excluded
+        assert "Fauzi" not in names, f"Fauzi should NOT be in qualified list: {names}"
+        # 5 qualified expected
+        assert len(rows) == 5, f"expected 5 qualified operators, got {len(rows)}: {names}"
+        for expected in ["Arif", "Redi", "Windu", "Dede", "Leni"]:
+            assert expected in names, f"missing {expected} in {names}"
+
+    def test_training_no_filter_includes_fauzi(self, admin):
+        r = admin.get(f"{API}/training-matrix", params={"product_sku": SKU})
+        assert r.status_code == 200
+        names = {row["nama_karyawan"] for row in r.json()}
+        assert "Fauzi" in names
