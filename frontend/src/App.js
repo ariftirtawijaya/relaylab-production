@@ -12,6 +12,7 @@ import MachinePrograms from "@/pages/MachinePrograms";
 import WorkOrders from "@/pages/WorkOrders";
 import WorkOrderDetail from "@/pages/WorkOrderDetail";
 import BundleDetail from "@/pages/BundleDetail";
+import Compare from "@/pages/Compare";
 import TrainingMatrix from "@/pages/TrainingMatrix";
 import Users from "@/pages/Users";
 import CuttingSheetPrint from "@/pages/print/CuttingSheetPrint";
@@ -44,6 +45,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/products" element={<Products />} />
             <Route path="/products/:sku" element={<ProductDetail />} />
+            <Route path="/products/:sku/compare/:sourceSku" element={<Compare />} />
             <Route path="/cable-functions" element={<CableFunctions />} />
             <Route path="/machine-programs" element={<MachinePrograms />} />
             <Route path="/work-orders" element={<WorkOrders />} />

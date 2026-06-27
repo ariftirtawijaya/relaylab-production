@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useAuth, hasRole } from "@/lib/auth";
-import { ArrowLeft, CheckCircle2, AlertTriangle, Plug, Pencil } from "lucide-react";
+import { ArrowLeft, CheckCircle2, AlertTriangle, Plug, Pencil, GitCompareArrows } from "lucide-react";
 import { fmtDate } from "@/lib/utils-app";
 import { toast } from "sonner";
 import RecipeEditor from "@/components/editors/RecipeEditor";
@@ -71,6 +71,13 @@ export default function ProductDetail() {
         actions={
           <div className="flex gap-2 flex-wrap">
             <Link to="/products"><Button variant="outline"><ArrowLeft className="w-4 h-4 mr-2" />Kembali</Button></Link>
+            {(product.parent_sku || product.source_sku) && (
+              <Link to={`/products/${product.sku}/compare/${product.parent_sku || product.source_sku}`}>
+                <Button data-testid="compare-product-btn" variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                  <GitCompareArrows className="w-4 h-4 mr-2" />Bandingkan dengan Produk Asal
+                </Button>
+              </Link>
+            )}
             {hasRole(user, "Admin") && (
               <Button data-testid="clone-product-btn" onClick={() => setCloneOpen(true)} variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
                 <GitBranch className="w-4 h-4 mr-2" />Buat Versi Baru

@@ -455,7 +455,7 @@ def _cleanup_versions(admin):
     cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
     db_name = os.environ.get("DB_NAME", "test_database")
     db = cli[db_name]
-    test_skus = ["RFL-AOD-H11-V2", "RFL-AOD-H11-V3", "RFL-STD-H11-V1"]
+    test_skus = ["RFL-AOD-H11-V2", "RFL-AOD-H11-V3", "RFL-AOD-H11-V4", "RFL-STD-H11-V1"]
     for sku in test_skus:
         db.products.delete_many({"sku": sku})
         db.product_cables.delete_many({"product_sku": sku})
@@ -474,7 +474,7 @@ def _cleanup_versions(admin):
 @pytest.fixture(scope="class", autouse=True)
 def cleanup_versions_around(request):
     """Run cleanup before AND after the P2A class."""
-    if request.cls.__name__ == "TestP2AClone":
+    if request.cls.__name__ in ("TestP2AClone", "TestP2BCompare"):
         # Need an admin session for cleanup
         s = _sess(ADMIN)
         _cleanup_versions(s)
@@ -623,3 +623,157 @@ class TestP2AClone:
         assert len(admin.get(f"{API}/products/RFL-STD-H11-V1/common-mistakes").json()) == 0
         tmpl = admin.get(f"{API}/products/RFL-STD-H11-V1/qc-template").json()
         assert len(tmpl["items"]) == 0
+
+
+# ============ P2B: Product Compare / Diff ============
+class TestP2BCompare:
+    NEW = "RFL-AOD-H11-V4"
+
+    @pytest.fixture(scope="class")
+    def setup_v2_with_diff(self, admin):
+        # Clone V1 -> V2 first
+        r = admin.post(f"{API}/products/{SRC_SKU}/clone", json={
+            "new_sku": self.NEW, "new_nama_produk": "Foglamp AOD V4 (Compare Test)",
+            "new_versi": "V4", "new_status": "Draft",
+            "copy_recipe": True, "copy_bundles": True,
+            "copy_work_instructions": True, "copy_pin_map": True,
+            "copy_qc_template": True, "copy_common_mistakes": True,
+            "hold_old": False,
+        })
+        assert r.status_code == 200, r.text
+
+        # Fetch V1 recipe, drop GND-OUT, change qty/catatan of another, then PUT to V2.
+        rec = admin.get(f"{API}/products/{SRC_SKU}/recipe").json()
+        # strip non-Cable fields (cable_function is a join)
+        new_rec = []
+        target_changed_code = None
+        for c in rec:
+            if c["cable_code"] == "GND-OUT":
+                continue
+            c2 = {k: v for k, v in c.items() if k != "cable_function"}
+            if target_changed_code is None and c["cable_code"] != "GND-OUT":
+                c2["qty_per_pcs"] = (c.get("qty_per_pcs", 1) or 1) + 5
+                c2["catatan_proses"] = (c.get("catatan_proses") or "") + " [CHANGED]"
+                target_changed_code = c["cable_code"]
+            new_rec.append(c2)
+        # PUT
+        r = admin.put(f"{API}/products/{self.NEW}/recipe", json=new_rec)
+        assert r.status_code == 200, r.text
+        return {"changed_code": target_changed_code, "removed_code": "GND-OUT"}
+
+    def test_compare_endpoint_structure(self, admin, setup_v2_with_diff):
+        r = admin.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}")
+        assert r.status_code == 200, r.text
+        d = r.json()
+        for k in ("current", "source", "summary", "recipe", "bundles",
+                  "work_instructions", "pin_map", "qc_template", "common_mistakes"):
+            assert k in d, f"missing key {k}"
+        assert d["current"]["sku"] == self.NEW
+        assert d["source"]["sku"] == SRC_SKU
+        for sec in ("recipe", "bundles", "work_instructions", "pin_map", "qc_template", "common_mistakes"):
+            assert sec in d["summary"]
+            for s in ("added", "removed", "changed", "unchanged"):
+                assert s in d["summary"][sec]
+            assert "rows" in d[sec]
+        # spot-check a recipe row shape
+        row = d["recipe"]["rows"][0]
+        for f in ("key", "status", "current", "source", "changes"):
+            assert f in row
+
+    def test_compare_self_all_unchanged(self, admin):
+        r = admin.get(f"{API}/products/{SRC_SKU}/compare/{SRC_SKU}")
+        assert r.status_code == 200
+        s = r.json()["summary"]
+        for sec in s.values():
+            assert sec["added"] == 0 and sec["removed"] == 0 and sec["changed"] == 0
+
+    def test_compare_404_when_missing(self, admin):
+        r = admin.get(f"{API}/products/NOT-EXIST/compare/{SRC_SKU}")
+        assert r.status_code == 404
+        assert "tidak ditemukan" in r.json()["detail"].lower()
+        r2 = admin.get(f"{API}/products/{SRC_SKU}/compare/NOT-EXIST")
+        assert r2.status_code == 404
+        assert "tidak ditemukan" in r2.json()["detail"].lower()
+
+    def test_recipe_diff_semantics(self, admin, setup_v2_with_diff):
+        meta = setup_v2_with_diff
+        d = admin.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}").json()
+        rsum = d["summary"]["recipe"]
+        assert rsum["removed"] >= 1
+        assert rsum["changed"] >= 1
+        removed = [r for r in d["recipe"]["rows"] if r["status"] == "removed"]
+        assert any(r["key"] == meta["removed_code"] for r in removed)
+        rm_row = next(r for r in removed if r["key"] == meta["removed_code"])
+        assert rm_row["current"] is None and rm_row["source"] is not None
+        changed = [r for r in d["recipe"]["rows"] if r["status"] == "changed"]
+        cr = next(r for r in changed if r["key"] == meta["changed_code"])
+        assert "qty_per_pcs" in cr["changes"]
+        assert "catatan_proses" in cr["changes"]
+
+    def test_bundle_membership_change_detected(self, admin, setup_v2_with_diff):
+        d = admin.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}").json()
+        # find bundle that originally contained GND-OUT
+        rows = d["bundles"]["rows"]
+        # search for a changed bundle whose source_cables includes removed cable
+        affected = [b for b in rows if "GND-OUT" in (b.get("source_cables") or [])]
+        assert affected, "expected a bundle to reference GND-OUT in source"
+        b = affected[0]
+        assert b["status"] == "changed"
+        assert "cables_in_bundle" in b["changes"]
+        assert "GND-OUT" not in (b.get("current_cables") or [])
+
+    def test_pin_map_diff_structure(self, admin, setup_v2_with_diff):
+        d = admin.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}").json()
+        rows = d["pin_map"]["rows"]
+        # Every row that is changed/unchanged should expose pin_diff with summary
+        for r in rows:
+            if r["status"] in ("changed", "unchanged"):
+                assert r["pin_diff"] is not None
+                ps = r["pin_diff"]["summary"]
+                for k in ("added", "removed", "changed", "unchanged"):
+                    assert k in ps
+
+    def test_work_instructions_step_diff_when_both(self, admin, setup_v2_with_diff):
+        d = admin.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}").json()
+        rows = d["work_instructions"]["rows"]
+        both = [r for r in rows if r["status"] in ("changed", "unchanged")]
+        assert both, "expected at least one WI present in both"
+        for r in both:
+            assert r["step_diff"] is not None
+            assert "rows" in r["step_diff"]
+
+    def test_qc_keyed_by_nama_added(self, admin, setup_v2_with_diff):
+        # Add a new QC item to V2 and ensure compare detects 'added' keyed by nama
+        tmpl = admin.get(f"{API}/products/{self.NEW}/qc-template").json()
+        items = list(tmpl.get("items", []))
+        new_item = {
+            "id": "qc-extra-1", "nama": "TEST_extra_qc_item",
+            "cara_tes": "Test cara", "expected": "OK",
+            "required": True, "urutan": 99,
+        }
+        items.append(new_item)
+        body = {"product_sku": self.NEW, "items": items}
+        r = admin.put(f"{API}/products/{self.NEW}/qc-template", json=body)
+        assert r.status_code == 200
+        d = admin.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}").json()
+        added_qc = [r for r in d["qc_template"]["rows"] if r["status"] == "added"]
+        assert any(r["key"] == "TEST_extra_qc_item" for r in added_qc)
+
+    def test_common_mistakes_keyed_by_kesalahan(self, admin, setup_v2_with_diff):
+        # Add a new common mistake on V2; expect 'added' in compare
+        payload = {
+            "id": "cm-test-1", "product_sku": self.NEW,
+            "kesalahan": "TEST_kesalahan_xyz",
+            "akibat": "Akibatnya...",
+            "cara_mencegah": "Hindari", "bundle_code": "A",
+        }
+        r = admin.post(f"{API}/products/{self.NEW}/common-mistakes", json=payload)
+        assert r.status_code == 200
+        d = admin.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}").json()
+        added = [m for m in d["common_mistakes"]["rows"] if m["status"] == "added"]
+        assert any(m["key"] == "TEST_kesalahan_xyz" for m in added)
+
+    def test_role_access_all_three(self, admin, prod, qc, setup_v2_with_diff):
+        for sess, name in ((admin, "admin"), (prod, "prod"), (qc, "qc")):
+            r = sess.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}")
+            assert r.status_code == 200, f"{name} got {r.status_code}: {r.text}"

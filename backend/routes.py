@@ -42,6 +42,66 @@ async def _log_revision(db, sku: str, user_name: str, section: str, note: str = 
     await db.revision_history.insert_one(rev)
 
 
+# ============ DIFF HELPERS ============
+def _diff_fields(a: dict, b: dict, fields: list) -> list:
+    return [f for f in fields if (a or {}).get(f) != (b or {}).get(f)]
+
+
+def _diff_by_key(current: list, source: list, key: str, fields: list) -> dict:
+    cur_map = {c[key]: c for c in current if c.get(key) is not None}
+    src_map = {s[key]: s for s in source if s.get(key) is not None}
+    rows = []
+    added = removed = changed = unchanged = 0
+    all_keys = sorted(set(cur_map.keys()) | set(src_map.keys()), key=lambda x: str(x))
+    for k in all_keys:
+        c, s = cur_map.get(k), src_map.get(k)
+        if c and not s:
+            rows.append({"key": str(k), "status": "added", "current": c, "source": None, "changes": []})
+            added += 1
+        elif s and not c:
+            rows.append({"key": str(k), "status": "removed", "current": None, "source": s, "changes": []})
+            removed += 1
+        else:
+            changes = _diff_fields(c, s, fields)
+            if changes:
+                rows.append({"key": str(k), "status": "changed", "current": c, "source": s, "changes": changes})
+                changed += 1
+            else:
+                rows.append({"key": str(k), "status": "unchanged", "current": c, "source": s, "changes": []})
+                unchanged += 1
+    return {"rows": rows, "summary": {"added": added, "removed": removed, "changed": changed, "unchanged": unchanged}}
+
+
+def _diff_pins(current_pins: list, source_pins: list) -> dict:
+    """Diff pin arrays inside a relay. Key by pin_number."""
+    return _diff_by_key(current_pins or [], source_pins or [], "pin_number", ["cable_code", "fungsi", "catatan"])
+
+
+def _diff_steps(current_steps: list, source_steps: list) -> dict:
+    """Diff work instruction steps by step_number AND check content."""
+    cur_map = {s.get("step_number"): s for s in (current_steps or [])}
+    src_map = {s.get("step_number"): s for s in (source_steps or [])}
+    rows = []
+    added = removed = changed = unchanged = 0
+    for n in sorted(set(cur_map.keys()) | set(src_map.keys())):
+        c, s = cur_map.get(n), src_map.get(n)
+        if c and not s:
+            rows.append({"key": str(n), "status": "added", "current": c, "source": None, "changes": []})
+            added += 1
+        elif s and not c:
+            rows.append({"key": str(n), "status": "removed", "current": None, "source": s, "changes": []})
+            removed += 1
+        else:
+            changes = _diff_fields(c, s, ["instruksi", "komponen", "tools", "safety", "common_mistake"])
+            if changes:
+                rows.append({"key": str(n), "status": "changed", "current": c, "source": s, "changes": changes})
+                changed += 1
+            else:
+                rows.append({"key": str(n), "status": "unchanged", "current": c, "source": s, "changes": []})
+                unchanged += 1
+    return {"rows": rows, "summary": {"added": added, "removed": removed, "changed": changed, "unchanged": unchanged}}
+
+
 # ============ AUTH ============
 @router.post("/auth/login")
 async def login(payload: LoginInput, request: Request, response: Response):
@@ -475,6 +535,140 @@ async def delete_common_mistake(sku: str, cid: str, request: Request, _: dict = 
 async def get_revisions(sku: str, request: Request, _: dict = Depends(get_current_user)):
     db = get_db(request)
     return await db.revision_history.find({"product_sku": sku}, {"_id": 0}).sort("tanggal", -1).to_list(1000)
+
+
+@router.get("/products/{sku}/compare/{source_sku}")
+async def compare_products(sku: str, source_sku: str, request: Request, _: dict = Depends(get_current_user)):
+    db = get_db(request)
+    cur = await db.products.find_one({"sku": sku}, {"_id": 0})
+    src = await db.products.find_one({"sku": source_sku}, {"_id": 0})
+    if not cur:
+        raise HTTPException(status_code=404, detail=f"Produk {sku} tidak ditemukan")
+    if not src:
+        raise HTTPException(status_code=404, detail=f"Produk pembanding {source_sku} tidak ditemukan")
+
+    # Fetch all sub-collections for both products in parallel-ish
+    cur_recipe = await db.product_cables.find({"product_sku": sku}, {"_id": 0}).sort("urutan", 1).to_list(2000)
+    src_recipe = await db.product_cables.find({"product_sku": source_sku}, {"_id": 0}).sort("urutan", 1).to_list(2000)
+    cur_bundles = await db.product_bundles.find({"product_sku": sku}, {"_id": 0}).sort("urutan", 1).to_list(500)
+    src_bundles = await db.product_bundles.find({"product_sku": source_sku}, {"_id": 0}).sort("urutan", 1).to_list(500)
+    cur_wis = await db.work_instructions.find({"product_sku": sku}, {"_id": 0}).to_list(500)
+    src_wis = await db.work_instructions.find({"product_sku": source_sku}, {"_id": 0}).to_list(500)
+    cur_pinmap = await db.relay_pin_maps.find({"product_sku": sku}, {"_id": 0}).sort("relay_number", 1).to_list(100)
+    src_pinmap = await db.relay_pin_maps.find({"product_sku": source_sku}, {"_id": 0}).sort("relay_number", 1).to_list(100)
+    cur_qc = await db.qc_templates.find_one({"product_sku": sku}, {"_id": 0}) or {"items": []}
+    src_qc = await db.qc_templates.find_one({"product_sku": source_sku}, {"_id": 0}) or {"items": []}
+    cur_mistakes = await db.common_mistakes.find({"product_sku": sku}, {"_id": 0}).to_list(500)
+    src_mistakes = await db.common_mistakes.find({"product_sku": source_sku}, {"_id": 0}).to_list(500)
+
+    # Recipe by cable_code
+    recipe_diff = _diff_by_key(
+        cur_recipe, src_recipe, "cable_code",
+        ["qty_per_pcs", "bundle_code", "urutan", "skun_a", "skun_b", "perlu_solder", "catatan_proses"],
+    )
+
+    # Bundles by bundle_code
+    bundle_diff = _diff_by_key(
+        cur_bundles, src_bundles, "bundle_code",
+        ["bundle_name", "fungsi_bundle", "instruksi_singkat", "target_relay_pin", "urutan"],
+    )
+    # Augment bundle diff with cable_code lists per bundle
+    cur_codes_by_bundle = {}
+    for r in cur_recipe:
+        cur_codes_by_bundle.setdefault(r["bundle_code"], []).append(r["cable_code"])
+    src_codes_by_bundle = {}
+    for r in src_recipe:
+        src_codes_by_bundle.setdefault(r["bundle_code"], []).append(r["cable_code"])
+    for row in bundle_diff["rows"]:
+        bc = row["key"]
+        row["current_cables"] = sorted(cur_codes_by_bundle.get(bc, []))
+        row["source_cables"] = sorted(src_codes_by_bundle.get(bc, []))
+        if row["status"] == "unchanged" and row["current_cables"] != row["source_cables"]:
+            row["status"] = "changed"
+            row["changes"].append("cables_in_bundle")
+            bundle_diff["summary"]["changed"] += 1
+            bundle_diff["summary"]["unchanged"] -= 1
+
+    # Work Instructions: union of bundle_codes that have instructions
+    cur_wi_map = {w["bundle_code"]: w for w in cur_wis}
+    src_wi_map = {w["bundle_code"]: w for w in src_wis}
+    wi_rows = []
+    wi_summary = {"added": 0, "removed": 0, "changed": 0, "unchanged": 0}
+    for bc in sorted(set(cur_wi_map.keys()) | set(src_wi_map.keys())):
+        c = cur_wi_map.get(bc)
+        s = src_wi_map.get(bc)
+        if c and not s:
+            wi_rows.append({"key": bc, "status": "added", "current_steps": c.get("steps", []), "source_steps": [], "step_diff": None})
+            wi_summary["added"] += 1
+        elif s and not c:
+            wi_rows.append({"key": bc, "status": "removed", "current_steps": [], "source_steps": s.get("steps", []), "step_diff": None})
+            wi_summary["removed"] += 1
+        else:
+            step_diff = _diff_steps(c.get("steps", []), s.get("steps", []))
+            ss = step_diff["summary"]
+            if ss["added"] + ss["removed"] + ss["changed"] > 0:
+                wi_summary["changed"] += 1
+                status = "changed"
+            else:
+                wi_summary["unchanged"] += 1
+                status = "unchanged"
+            wi_rows.append({"key": bc, "status": status, "current_steps": c.get("steps", []), "source_steps": s.get("steps", []), "step_diff": step_diff})
+
+    # Pin Map by relay_number
+    pinmap_diff = _diff_by_key(
+        cur_pinmap, src_pinmap, "relay_number",
+        ["relay_name", "relay_type", "catatan"],
+    )
+    # Inside each unchanged/changed relay, also compare pins
+    cur_pinmap_map = {r["relay_number"]: r for r in cur_pinmap}
+    src_pinmap_map = {r["relay_number"]: r for r in src_pinmap}
+    for row in pinmap_diff["rows"]:
+        if row["status"] in ("changed", "unchanged"):
+            relay_num = int(row["key"])
+            c_pins = cur_pinmap_map.get(relay_num, {}).get("pins", [])
+            s_pins = src_pinmap_map.get(relay_num, {}).get("pins", [])
+            pin_d = _diff_pins(c_pins, s_pins)
+            row["pin_diff"] = pin_d
+            if pin_d["summary"]["added"] + pin_d["summary"]["removed"] + pin_d["summary"]["changed"] > 0 and row["status"] == "unchanged":
+                row["status"] = "changed"
+                row["changes"].append("pins")
+                pinmap_diff["summary"]["changed"] += 1
+                pinmap_diff["summary"]["unchanged"] -= 1
+        else:
+            row["pin_diff"] = None
+
+    # QC Template items - key by nama (item ids are not stable across clones)
+    qc_diff = _diff_by_key(
+        cur_qc.get("items", []), src_qc.get("items", []), "nama",
+        ["cara_tes", "expected", "required", "urutan"],
+    )
+
+    # Common mistakes - key by kesalahan text
+    mistakes_diff = _diff_by_key(
+        cur_mistakes, src_mistakes, "kesalahan",
+        ["akibat", "cara_mencegah", "bundle_code"],
+    )
+
+    summary = {
+        "recipe": recipe_diff["summary"],
+        "bundles": bundle_diff["summary"],
+        "work_instructions": wi_summary,
+        "pin_map": pinmap_diff["summary"],
+        "qc_template": qc_diff["summary"],
+        "common_mistakes": mistakes_diff["summary"],
+    }
+
+    return {
+        "current": cur,
+        "source": src,
+        "summary": summary,
+        "recipe": recipe_diff,
+        "bundles": bundle_diff,
+        "work_instructions": {"rows": wi_rows, "summary": wi_summary},
+        "pin_map": pinmap_diff,
+        "qc_template": qc_diff,
+        "common_mistakes": mistakes_diff,
+    }
 
 
 @router.post("/products/{sku}/revisions")
