@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { WO_STATUSES, fmtDate, fmtDateTime } from "@/lib/utils-app";
 import { toast } from "sonner";
+import ProductionBriefing, { ChangedBadge, cableChangeKind, bundleChangeKind } from "@/components/ProductionBriefing";
 
 export default function WorkOrderDetail() {
   const { woNumber } = useParams();
@@ -111,6 +112,8 @@ export default function WorkOrderDetail() {
         </div>
       </Section>
 
+      <ProductionBriefing briefing={wo.briefing} sku={wo.product_sku} />
+
       <Tabs defaultValue="cutting">
         <TabsList className="mb-4 flex-wrap h-auto">
           <TabsTrigger data-testid="tab-cutting" value="cutting"><Scissors className="w-4 h-4 mr-1" />Cutting Sheet</TabsTrigger>
@@ -150,7 +153,7 @@ export default function WorkOrderDetail() {
               </TableHeader>
               <TableBody>
                 {rows.map((r) => (
-                  <CuttingRow key={r.cable_code} row={r} onSet={setBatchColor} canEdit={canEdit} />
+                  <CuttingRow key={r.cable_code} row={r} onSet={setBatchColor} canEdit={canEdit} briefing={wo.briefing} />
                 ))}
               </TableBody>
             </Table>
@@ -164,12 +167,17 @@ export default function WorkOrderDetail() {
             </Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {bundles.map((b) => (
-              <div key={b.bundle_code} className="bg-white border-2 border-slate-300 rounded-md p-4" data-testid={`wo-bundle-${b.bundle_code}`}>
+            {bundles.map((b) => {
+              const bundleChanged = bundleChangeKind(wo.briefing, b.bundle_code);
+              return (
+              <div key={b.bundle_code} className={`bg-white border-2 rounded-md p-4 ${bundleChanged ? "border-amber-400" : "border-slate-300"}`} data-testid={`wo-bundle-${b.bundle_code}`}>
                 <div className="flex items-center justify-between border-b pb-2 mb-3">
                   <div>
                     <div className="text-xs text-slate-500 font-mono">{wo.wo_number}</div>
-                    <div className="font-bold text-lg">BUNDLE {b.bundle_code} — {b.bundle_name?.toUpperCase()}</div>
+                    <div className="font-bold text-lg flex items-center gap-2 flex-wrap">
+                      BUNDLE {b.bundle_code} — {b.bundle_name?.toUpperCase()}
+                      {bundleChanged && <ChangedBadge kind="changed" />}
+                    </div>
                     <div className="text-xs text-slate-500">{b.fungsi_bundle}</div>
                   </div>
                   <Link to={`/work-orders/${wo.wo_number}/bundles/${b.bundle_code}`}>
@@ -201,7 +209,7 @@ export default function WorkOrderDetail() {
                 {b.instruksi_singkat && <div className="text-xs text-slate-600 mt-2 leading-relaxed border-t pt-2">{b.instruksi_singkat}</div>}
                 {b.target_relay_pin && <div className="text-xs text-amber-700 mt-1 font-medium">Target: {b.target_relay_pin}</div>}
               </div>
-            ))}
+            );})}
           </div>
         </TabsContent>
 

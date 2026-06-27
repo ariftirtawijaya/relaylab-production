@@ -4,15 +4,18 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
 import { fmtDate } from "@/lib/utils-app";
+import ProductionBriefing from "@/components/ProductionBriefing";
 
 export default function CuttingSheetPrint() {
   const { woNumber } = useParams();
   const [data, setData] = useState(null);
+  const [wo, setWo] = useState(null);
   useEffect(() => {
     api.get(`/work-orders/${woNumber}/cutting-sheet`).then((r) => setData(r.data));
+    api.get(`/work-orders/${woNumber}`).then((r) => setWo(r.data));
   }, [woNumber]);
-  if (!data) return <div className="p-8">Memuat...</div>;
-  const { wo, product, rows } = data;
+  if (!data || !wo) return <div className="p-8">Memuat...</div>;
+  const { product, rows } = data;
 
   return (
     <div className="print-area p-8 max-w-5xl mx-auto bg-white text-slate-900">
@@ -38,6 +41,8 @@ export default function CuttingSheetPrint() {
         <div><div className="text-xs text-slate-500 uppercase">Reseller</div><div>{wo.reseller || "-"}</div></div>
         <div><div className="text-xs text-slate-500 uppercase">Qty Order</div><div className="font-bold text-lg">{wo.qty} pcs</div></div>
       </div>
+
+      <ProductionBriefing briefing={wo.briefing} sku={wo.product_sku} />
 
       <table className="w-full text-sm border-collapse">
         <thead>

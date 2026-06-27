@@ -537,9 +537,8 @@ async def get_revisions(sku: str, request: Request, _: dict = Depends(get_curren
     return await db.revision_history.find({"product_sku": sku}, {"_id": 0}).sort("tanggal", -1).to_list(1000)
 
 
-@router.get("/products/{sku}/compare/{source_sku}")
-async def compare_products(sku: str, source_sku: str, request: Request, _: dict = Depends(get_current_user)):
-    db = get_db(request)
+async def _compute_compare(db, sku: str, source_sku: str):
+    """Shared compare/diff logic — returns full diff dict or raises HTTPException."""
     cur = await db.products.find_one({"sku": sku}, {"_id": 0})
     src = await db.products.find_one({"sku": source_sku}, {"_id": 0})
     if not cur:
@@ -547,7 +546,6 @@ async def compare_products(sku: str, source_sku: str, request: Request, _: dict 
     if not src:
         raise HTTPException(status_code=404, detail=f"Produk pembanding {source_sku} tidak ditemukan")
 
-    # Fetch all sub-collections for both products in parallel-ish
     cur_recipe = await db.product_cables.find({"product_sku": sku}, {"_id": 0}).sort("urutan", 1).to_list(2000)
     src_recipe = await db.product_cables.find({"product_sku": source_sku}, {"_id": 0}).sort("urutan", 1).to_list(2000)
     cur_bundles = await db.product_bundles.find({"product_sku": sku}, {"_id": 0}).sort("urutan", 1).to_list(500)
@@ -561,18 +559,15 @@ async def compare_products(sku: str, source_sku: str, request: Request, _: dict 
     cur_mistakes = await db.common_mistakes.find({"product_sku": sku}, {"_id": 0}).to_list(500)
     src_mistakes = await db.common_mistakes.find({"product_sku": source_sku}, {"_id": 0}).to_list(500)
 
-    # Recipe by cable_code
     recipe_diff = _diff_by_key(
         cur_recipe, src_recipe, "cable_code",
         ["qty_per_pcs", "bundle_code", "urutan", "skun_a", "skun_b", "perlu_solder", "catatan_proses"],
     )
 
-    # Bundles by bundle_code
     bundle_diff = _diff_by_key(
         cur_bundles, src_bundles, "bundle_code",
         ["bundle_name", "fungsi_bundle", "instruksi_singkat", "target_relay_pin", "urutan"],
     )
-    # Augment bundle diff with cable_code lists per bundle
     cur_codes_by_bundle = {}
     for r in cur_recipe:
         cur_codes_by_bundle.setdefault(r["bundle_code"], []).append(r["cable_code"])
@@ -589,7 +584,6 @@ async def compare_products(sku: str, source_sku: str, request: Request, _: dict 
             bundle_diff["summary"]["changed"] += 1
             bundle_diff["summary"]["unchanged"] -= 1
 
-    # Work Instructions: union of bundle_codes that have instructions
     cur_wi_map = {w["bundle_code"]: w for w in cur_wis}
     src_wi_map = {w["bundle_code"]: w for w in src_wis}
     wi_rows = []
@@ -614,12 +608,10 @@ async def compare_products(sku: str, source_sku: str, request: Request, _: dict 
                 status = "unchanged"
             wi_rows.append({"key": bc, "status": status, "current_steps": c.get("steps", []), "source_steps": s.get("steps", []), "step_diff": step_diff})
 
-    # Pin Map by relay_number
     pinmap_diff = _diff_by_key(
         cur_pinmap, src_pinmap, "relay_number",
         ["relay_name", "relay_type", "catatan"],
     )
-    # Inside each unchanged/changed relay, also compare pins
     cur_pinmap_map = {r["relay_number"]: r for r in cur_pinmap}
     src_pinmap_map = {r["relay_number"]: r for r in src_pinmap}
     for row in pinmap_diff["rows"]:
@@ -637,13 +629,11 @@ async def compare_products(sku: str, source_sku: str, request: Request, _: dict 
         else:
             row["pin_diff"] = None
 
-    # QC Template items - key by nama (item ids are not stable across clones)
     qc_diff = _diff_by_key(
         cur_qc.get("items", []), src_qc.get("items", []), "nama",
         ["cara_tes", "expected", "required", "urutan"],
     )
 
-    # Common mistakes - key by kesalahan text
     mistakes_diff = _diff_by_key(
         cur_mistakes, src_mistakes, "kesalahan",
         ["akibat", "cara_mencegah", "bundle_code"],
@@ -669,6 +659,105 @@ async def compare_products(sku: str, source_sku: str, request: Request, _: dict 
         "qc_template": qc_diff,
         "common_mistakes": mistakes_diff,
     }
+
+
+def _build_briefing_from_diff(sku: str, source_sku: str, diff: dict) -> dict:
+    """Condense diff into a Production Briefing snapshot (Bahasa Indonesia)."""
+    s = diff["summary"]
+    parts = []
+    if s["recipe"]["added"]:
+        parts.append(f"{s['recipe']['added']} kabel ditambahkan")
+    if s["recipe"]["removed"]:
+        parts.append(f"{s['recipe']['removed']} kabel dihapus")
+    if s["recipe"]["changed"]:
+        parts.append(f"{s['recipe']['changed']} kabel berubah")
+    if s["bundles"]["added"] + s["bundles"]["removed"] + s["bundles"]["changed"]:
+        total_b = s["bundles"]["added"] + s["bundles"]["removed"] + s["bundles"]["changed"]
+        parts.append(f"{total_b} bundle berubah")
+    if s["pin_map"]["added"] + s["pin_map"]["removed"] + s["pin_map"]["changed"]:
+        total_p = s["pin_map"]["added"] + s["pin_map"]["removed"] + s["pin_map"]["changed"]
+        parts.append(f"{total_p} pin map berubah")
+    if s["qc_template"]["added"] + s["qc_template"]["removed"] + s["qc_template"]["changed"]:
+        total_q = s["qc_template"]["added"] + s["qc_template"]["removed"] + s["qc_template"]["changed"]
+        parts.append(f"{total_q} QC item berubah")
+    if s["work_instructions"]["added"] + s["work_instructions"]["removed"] + s["work_instructions"]["changed"]:
+        total_w = s["work_instructions"]["added"] + s["work_instructions"]["removed"] + s["work_instructions"]["changed"]
+        parts.append(f"{total_w} work instruction berubah")
+
+    if not parts:
+        summary_text = f"Produk ini identik dengan {source_sku}. Tidak ada perubahan yang tercatat."
+    else:
+        summary_text = f"Catatan Produk: Produk ini berbeda dari {source_sku}. Perubahan utama: " + ", ".join(parts) + "."
+
+    # Important changes detail (max 6 short bullet points)
+    important = []
+    for r in diff["recipe"]["rows"]:
+        if r["status"] == "added":
+            important.append(f"Kabel BARU: {r['key']}")
+        elif r["status"] == "removed":
+            important.append(f"Kabel DIHAPUS: {r['key']}")
+        elif r["status"] == "changed":
+            fields = ", ".join(r["changes"][:3])
+            important.append(f"Kabel BERUBAH: {r['key']} ({fields})")
+    for r in diff["bundles"]["rows"]:
+        if r["status"] == "added":
+            important.append(f"Bundle BARU: {r['key']} — {r['current'].get('bundle_name', '')}")
+        elif r["status"] == "removed":
+            important.append(f"Bundle DIHAPUS: {r['key']}")
+        elif r["status"] == "changed":
+            important.append(f"Bundle BERUBAH: {r['key']}")
+    for r in diff["pin_map"]["rows"]:
+        if r["status"] != "unchanged":
+            important.append(f"Pin Map {r['status'].upper()}: Relay {r['key']}")
+    important = important[:12]
+
+    changed_sections = [k for k, v in s.items() if v["added"] + v["removed"] + v["changed"] > 0]
+
+    # Collect membership sets for badge rendering on UI
+    changed_recipe_codes = [r["key"] for r in diff["recipe"]["rows"] if r["status"] != "unchanged"]
+    removed_recipe_codes = [r["key"] for r in diff["recipe"]["rows"] if r["status"] == "removed"]
+    added_recipe_codes = [r["key"] for r in diff["recipe"]["rows"] if r["status"] == "added"]
+    changed_bundle_codes = [r["key"] for r in diff["bundles"]["rows"] if r["status"] != "unchanged"]
+    changed_wi_bundles = [r["key"] for r in diff["work_instructions"]["rows"] if r["status"] != "unchanged"]
+    changed_pin_relays = [r["key"] for r in diff["pin_map"]["rows"] if r["status"] != "unchanged"]
+    changed_qc_items = [r["key"] for r in diff["qc_template"]["rows"] if r["status"] != "unchanged"]
+
+    return {
+        "compared_to_sku": source_sku,
+        "generated_at": now_iso(),
+        "summary_text": summary_text,
+        "important_changes": important,
+        "changed_sections": changed_sections,
+        "compare_url": f"/products/{sku}/compare/{source_sku}",
+        "changed_recipe_codes": changed_recipe_codes,
+        "removed_recipe_codes": removed_recipe_codes,
+        "added_recipe_codes": added_recipe_codes,
+        "changed_bundle_codes": changed_bundle_codes,
+        "changed_wi_bundles": changed_wi_bundles,
+        "changed_pin_relays": [str(x) for x in changed_pin_relays],
+        "changed_qc_items": changed_qc_items,
+    }
+
+
+async def _build_briefing(db, sku: str) -> Optional[dict]:
+    """Try to build briefing for an SKU; returns None if no parent/source or compare fails."""
+    prod = await db.products.find_one({"sku": sku}, {"_id": 0})
+    if not prod:
+        return None
+    source_sku = prod.get("parent_sku") or prod.get("source_sku")
+    if not source_sku:
+        return None
+    try:
+        diff = await _compute_compare(db, sku, source_sku)
+        return _build_briefing_from_diff(sku, source_sku, diff)
+    except Exception:
+        return None
+
+
+@router.get("/products/{sku}/compare/{source_sku}")
+async def compare_products(sku: str, source_sku: str, request: Request, _: dict = Depends(get_current_user)):
+    db = get_db(request)
+    return await _compute_compare(db, sku, source_sku)
 
 
 @router.post("/products/{sku}/revisions")
@@ -790,8 +879,34 @@ async def create_work_order(payload: WorkOrderCreateInput, request: Request, use
         reseller=payload.reseller, deadline=payload.deadline, prioritas=payload.prioritas,
         catatan=payload.catatan, status="Menunggu Cutting", created_by=user["name"],
     )
-    await db.work_orders.insert_one(wo.model_dump())
-    return wo
+    wo_dict = wo.model_dump()
+    # Auto-generate Production Briefing if product has a parent/source version
+    briefing = await _build_briefing(db, payload.product_sku)
+    if briefing:
+        wo_dict["briefing"] = briefing
+    await db.work_orders.insert_one(wo_dict)
+    wo_dict.pop("_id", None)
+    return wo_dict
+
+
+@router.post("/work-orders/{wo_number}/regenerate-briefing")
+async def regenerate_briefing(wo_number: str, request: Request, _: dict = Depends(require_roles("Admin", "Production"))):
+    db = get_db(request)
+    wo = await db.work_orders.find_one({"wo_number": wo_number}, {"_id": 0})
+    if not wo:
+        raise HTTPException(status_code=404, detail="WO tidak ditemukan")
+    briefing = await _build_briefing(db, wo["product_sku"])
+    if briefing:
+        await db.work_orders.update_one(
+            {"wo_number": wo_number},
+            {"$set": {"briefing": briefing, "updated_at": now_iso()}},
+        )
+    else:
+        await db.work_orders.update_one(
+            {"wo_number": wo_number},
+            {"$unset": {"briefing": ""}, "$set": {"updated_at": now_iso()}},
+        )
+    return await db.work_orders.find_one({"wo_number": wo_number}, {"_id": 0})
 
 
 @router.get("/work-orders/{wo_number}")

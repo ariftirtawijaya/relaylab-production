@@ -9,6 +9,7 @@ import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from "@/components/ui/table";
 import { ArrowLeft, ArrowRight, AlertTriangle, Plug, Printer } from "lucide-react";
+import ProductionBriefing, { ChangedBadge, cableChangeKind, bundleChangeKind } from "@/components/ProductionBriefing";
 
 export default function BundleDetail() {
   const { woNumber, bundleCode } = useParams();
@@ -25,6 +26,8 @@ export default function BundleDetail() {
 
   if (!data) return <div className="p-6 text-slate-400">Memuat...</div>;
   const { wo, product, bundle, cables, work_instruction, common_mistakes, prev_bundle, next_bundle } = data;
+  const briefing = wo.briefing;
+  const bundleChanged = bundleChangeKind(briefing, bundle.bundle_code);
 
   return (
     <div>
@@ -47,6 +50,20 @@ export default function BundleDetail() {
         }
       />
 
+      {bundleChanged && (
+        <div data-testid="bundle-changed-alert" className="bg-amber-100 border-2 border-amber-300 rounded-md p-3 mb-4 flex items-start gap-2">
+          <AlertTriangle className="w-5 h-5 text-amber-700 mt-0.5 flex-shrink-0" />
+          <div className="text-sm">
+            <div className="font-bold text-amber-900">Bundle ini berbeda dari versi asal ({briefing.compared_to_sku}).</div>
+            <div className="text-amber-800 text-xs mt-1">
+              Periksa daftar kabel, instruksi, dan target pin di bawah. Jangan menggunakan kebiasaan dari versi lama.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ProductionBriefing briefing={briefing} sku={wo.product_sku} compact />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
         <div className="lg:col-span-2">
           <Section title={`Kabel — Bundle ${bundle.bundle_code}`}>
@@ -62,9 +79,16 @@ export default function BundleDetail() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {cables.map((c) => (
+                {cables.map((c) => {
+                  const ck = cableChangeKind(briefing, c.cable_code);
+                  return (
                   <TableRow key={c.id} className={c.substitusi ? "bg-amber-50" : ""}>
-                    <TableCell className="font-mono font-semibold">{c.cable_code}</TableCell>
+                    <TableCell className="font-mono font-semibold">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {c.cable_code}
+                        {ck && <ChangedBadge kind={ck} />}
+                      </div>
+                    </TableCell>
                     <TableCell>{c.nama_fungsi}</TableCell>
                     <TableCell className="mono">{c.ukuran_kabel}</TableCell>
                     <TableCell className="mono">{c.panjang_cm} cm</TableCell>
@@ -74,7 +98,7 @@ export default function BundleDetail() {
                     </TableCell>
                     <TableCell className="text-right mono">x{c.total_qty}</TableCell>
                   </TableRow>
-                ))}
+                );})}
               </TableBody>
             </Table>
           </Section>

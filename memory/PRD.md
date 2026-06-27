@@ -55,6 +55,16 @@ mandatory-color cables like power/ground).
 - Frontend `Products` list: new Versioning column with Original / Clone / Latest / N-versi badges grouped by `version_group`
 - Backend tests: 51/51 (12 new P2A tests)
 
+## Phase P2B (v1.3, Feb 2026) — Product Version Diff / Compare
+- `GET /api/products/{sku}/compare/{source_sku}` (all roles) returns structured diff with `summary` (per section) + 6 section diffs (recipe/bundles/work_instructions/pin_map/qc_template/common_mistakes)
+- Each row labeled `added | removed | changed | unchanged` with field-level change list
+- Smart synthesis: recipe membership changes per bundle (`cables_in_bundle`); nested `pin_diff` per relay; nested `step_diff` per work instruction bundle
+- Keys: cable_code (recipe), bundle_code (bundles + WI), relay_number (pin map), nama (QC items, stable across clones), kesalahan text (mistakes)
+- Frontend page `/products/{sku}/compare/{source_sku}` with summary card showing Indonesian "X perubahan recipe, Y perubahan bundle…", 6 tab sections, side-by-side field diff with strikethrough+arrow, status chips (Ditambahkan/Dihapus/Diubah/Tidak berubah), source product selector, browser print
+- Frontend ProductDetail: "Bandingkan dengan Produk Asal" button (visible when parent_sku or source_sku present, all roles)
+- Backend tests: 61/61 (10 new P2B tests including self-compare, 404, all sections, role access)
+- Rename: app renamed from "Production OS" to "Production System" (browser title, sidebar, login, print views, docstrings, PRD)
+
 ## Backlog (P1)
 - Foto upload for bundles/instructions/mistakes (object storage)
 - Edit UI for product recipe/bundles/work-instructions/pin-map (currently CRUD by JSON; structure is editable but UI forms not yet built)

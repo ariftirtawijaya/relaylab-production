@@ -281,6 +281,7 @@ class WorkOrder(BaseModel):
     operator_produksi: Optional[str] = None
     qc_person: Optional[str] = None
     created_by: Optional[str] = None
+    briefing: Optional[dict] = None
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
 
