@@ -96,7 +96,7 @@ export default function Layout() {
           </div>
           <div>
             <div className="font-semibold tracking-tight">RelayLab</div>
-            <div className="text-xs text-slate-400 -mt-0.5">Production OS</div>
+            <div className="text-xs text-slate-400 -mt-0.5">Production System</div>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto py-3">
@@ -136,7 +136,7 @@ export default function Layout() {
               {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
             <div className="text-sm text-slate-500 hidden sm:block">
-              Dokumentasi · Work Order · Cutting · QC
+              Sistem Dokumentasi dan Workflow Produksi RelayLab
             </div>
           </div>
           <DropdownMenu>

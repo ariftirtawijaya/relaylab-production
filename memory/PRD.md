@@ -1,4 +1,4 @@
-# RelayLab Production OS — PRD
+# RelayLab Production System — PRD
 
 ## Problem Statement
 Internal web app for RelayLab Autolight to document production of automotive relay sets

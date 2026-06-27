@@ -1,4 +1,4 @@
-"""Seed data for RelayLab Production OS - Foglamp AOD product."""
+"""Seed data for RelayLab Production System - Foglamp AOD product."""
 from auth import hash_password
 from models import (
     UserDoc, Product, CableFunction, MachineProgram,

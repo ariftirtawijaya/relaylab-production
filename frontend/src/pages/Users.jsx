@@ -76,7 +76,7 @@ export default function Users() {
     <div>
       <PageHeader
         title="Pengguna"
-        subtitle="Kelola akun pengguna RelayLab Production OS."
+        subtitle="Kelola akun pengguna RelayLab Production System."
         actions={<EditDialog isEdit={false} onSaved={load} trigger={<Button data-testid="new-user-btn" className="bg-amber-600 hover:bg-amber-700 text-white"><Plus className="w-4 h-4 mr-2" />Tambah Pengguna</Button>} />}
       />
       <Section>

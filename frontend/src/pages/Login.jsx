@@ -39,7 +39,7 @@ export default function Login() {
             </div>
             <div>
               <div className="text-lg font-semibold">RelayLab</div>
-              <div className="text-xs text-slate-400">Production OS</div>
+              <div className="text-xs text-slate-400">Production System</div>
             </div>
           </div>
           <div className="space-y-5 max-w-md">
@@ -48,9 +48,9 @@ export default function Login() {
               Tanpa owner ikut potong kabel.
             </h2>
             <p className="text-slate-300 text-sm leading-relaxed">
-              Kelola Work Order, Cutting Sheet, Bundle Label, dan QC Checklist
-              untuk produksi relay set otomotif. <span className="text-amber-400 font-medium">
-              Function First, Color Second.</span>
+              Sistem Dokumentasi dan Workflow Produksi RelayLab. Kelola Work Order, Cutting Sheet,
+              Bundle Label, dan QC Checklist untuk produksi relay set otomotif.
+              <span className="text-amber-400 font-medium"> Function First, Color Second.</span>
             </p>
             <div className="grid grid-cols-3 gap-3 pt-4 text-xs">
               <div className="border border-slate-700 rounded-md p-3">
@@ -80,7 +80,7 @@ export default function Login() {
               <Zap className="w-6 h-6 text-slate-900" />
             </div>
             <div>
-              <div className="font-semibold">RelayLab Production OS</div>
+              <div className="font-semibold">RelayLab Production System</div>
             </div>
           </div>
           <div>

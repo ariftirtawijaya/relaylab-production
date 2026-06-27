@@ -1,4 +1,4 @@
-"""RelayLab Production OS - FastAPI main."""
+"""RelayLab Production System - FastAPI main."""
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -15,7 +15,7 @@ db_name = os.environ["DB_NAME"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
-app = FastAPI(title="RelayLab Production OS")
+app = FastAPI(title="RelayLab Production System")
 app.state.db = db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -59,4 +59,4 @@ app.include_router(router)
 
 @app.get("/api/")
 async def api_root():
-    return {"app": "RelayLab Production OS", "ok": True}
+    return {"app": "RelayLab Production System", "ok": True}

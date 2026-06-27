@@ -23,7 +23,7 @@ export default function QcChecklistPrint() {
       <header className="border-b-2 border-black pb-3 mb-4">
         <div className="flex justify-between items-end">
           <div>
-            <div className="text-xs uppercase tracking-widest text-slate-600">RelayLab Production OS</div>
+            <div className="text-xs uppercase tracking-widest text-slate-600">RelayLab Production System</div>
             <h1 className="text-2xl font-bold">QC CHECKLIST</h1>
           </div>
           <div className="text-right text-sm">

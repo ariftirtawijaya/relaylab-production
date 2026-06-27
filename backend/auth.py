@@ -1,4 +1,4 @@
-"""Session-cookie based auth for RelayLab Production OS."""
+"""Session-cookie based auth for RelayLab Production System."""
 import bcrypt
 import uuid
 from datetime import datetime, timezone, timedelta

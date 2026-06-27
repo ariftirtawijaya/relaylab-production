@@ -1,4 +1,4 @@
-"""Pydantic models for RelayLab Production OS"""
+"""Pydantic models for RelayLab Production System"""
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Literal
 from datetime import datetime, timezone
