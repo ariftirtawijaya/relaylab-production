@@ -777,3 +777,158 @@ class TestP2BCompare:
         for sess, name in ((admin, "admin"), (prod, "prod"), (qc, "qc")):
             r = sess.get(f"{API}/products/{self.NEW}/compare/{SRC_SKU}")
             assert r.status_code == 200, f"{name} got {r.status_code}: {r.text}"
+
+
+# ============ P2C: Auto-Generated Production Briefing ============
+class TestP2CBriefing:
+    """Production Briefing snapshot attached to Work Orders made from cloned products."""
+
+    NEW = "RFL-AOD-H11-V5"
+    wo_with_briefing = None  # set in test_wo_create_cloned_attaches_briefing
+    wo_v1_no_briefing = None
+
+    @pytest.fixture(scope="class")
+    def setup_v5_with_diff(self, admin):
+        # Clean any previous V5 then clone
+        _cleanup_versions(admin)  # also clears V2/V3/V4
+        # additionally clean V5 directly
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        for coll in ("products", "product_cables", "product_bundles", "work_instructions",
+                     "relay_pin_maps", "qc_templates", "common_mistakes", "revision_history",
+                     "work_orders"):
+            db[coll].delete_many({"$or": [{"sku": self.NEW}, {"product_sku": self.NEW}]})
+
+        r = admin.post(f"{API}/products/{SRC_SKU}/clone", json={
+            "new_sku": self.NEW, "new_nama_produk": "Foglamp AOD V5 (Briefing Test)",
+            "new_versi": "V5", "new_status": "Trial",
+            "copy_recipe": True, "copy_bundles": True,
+            "copy_work_instructions": True, "copy_pin_map": True,
+            "copy_qc_template": True, "copy_common_mistakes": True,
+            "hold_old": False,
+        })
+        assert r.status_code == 200, r.text
+
+        # Mutate V5 recipe: drop GND-OUT and bump qty/catatan on another cable
+        rec = admin.get(f"{API}/products/{SRC_SKU}/recipe").json()
+        new_rec = []
+        changed_code = None
+        for c in rec:
+            if c["cable_code"] == "GND-OUT":
+                continue
+            c2 = {k: v for k, v in c.items() if k != "cable_function"}
+            if changed_code is None:
+                c2["qty_per_pcs"] = (c.get("qty_per_pcs", 1) or 1) + 7
+                c2["catatan_proses"] = (c.get("catatan_proses") or "") + " [P2C]"
+                changed_code = c["cable_code"]
+            new_rec.append(c2)
+        r = admin.put(f"{API}/products/{self.NEW}/recipe", json=new_rec)
+        assert r.status_code == 200, r.text
+        return {"changed_code": changed_code, "removed_code": "GND-OUT"}
+
+    def test_wo_create_cloned_attaches_briefing(self, prod, setup_v5_with_diff):
+        meta = setup_v5_with_diff
+        r = prod.post(f"{API}/work-orders", json={
+            "product_sku": self.NEW, "qty": 5, "reseller": "Briefing Test",
+            "prioritas": "Normal", "catatan": "P2C",
+        })
+        assert r.status_code == 200, r.text
+        wo = r.json()
+        assert "briefing" in wo, "WO missing briefing snapshot"
+        b = wo["briefing"]
+        assert b["compared_to_sku"] == SRC_SKU
+        assert b["summary_text"] and "berbeda" in b["summary_text"].lower()
+        # changed_recipe_codes should include the changed cable, removed_recipe_codes the removed one
+        assert meta["changed_code"] in b["changed_recipe_codes"]
+        assert "GND-OUT" in b["removed_recipe_codes"]
+        # changed_sections lists at least 'recipe'
+        assert "recipe" in b["changed_sections"]
+        # compare_url uses the new sku and source sku
+        assert b["compare_url"] == f"/products/{self.NEW}/compare/{SRC_SKU}"
+        # important_changes contains at least one entry
+        assert isinstance(b["important_changes"], list) and len(b["important_changes"]) >= 1
+        TestP2CBriefing.wo_with_briefing = wo["wo_number"]
+
+    def test_wo_create_original_no_briefing(self, prod):
+        # WO for SRC_SKU (root, no parent/source) should NOT have briefing
+        r = prod.post(f"{API}/work-orders", json={
+            "product_sku": SRC_SKU, "qty": 1, "reseller": "Root Test",
+            "prioritas": "Normal",
+        })
+        assert r.status_code == 200, r.text
+        wo = r.json()
+        # Either no briefing key or briefing is null/missing
+        assert not wo.get("briefing"), f"unexpected briefing on root product: {wo.get('briefing')}"
+        TestP2CBriefing.wo_v1_no_briefing = wo["wo_number"]
+
+    def test_wo_detail_returns_briefing(self, admin):
+        wo_num = TestP2CBriefing.wo_with_briefing
+        assert wo_num, "predecessor test did not run"
+        r = admin.get(f"{API}/work-orders/{wo_num}")
+        assert r.status_code == 200, r.text
+        wo = r.json()
+        assert wo.get("briefing"), "GET WO should return briefing"
+        assert wo["briefing"]["compared_to_sku"] == SRC_SKU
+
+    def test_regenerate_briefing_after_mutation(self, admin, setup_v5_with_diff):
+        wo_num = TestP2CBriefing.wo_with_briefing
+        # Mutate recipe again: bump qty on another cable to add a new "changed" entry
+        rec = admin.get(f"{API}/products/{self.NEW}/recipe").json()
+        # Find a cable that hasn't been changed yet (first one not equal to changed_code)
+        target = None
+        for c in rec:
+            if c["cable_code"] != setup_v5_with_diff["changed_code"]:
+                target = c
+                break
+        assert target, "no target cable to mutate"
+        new_rec = [{k: v for k, v in c.items() if k != "cable_function"} for c in rec]
+        for c in new_rec:
+            if c["cable_code"] == target["cable_code"]:
+                c["qty_per_pcs"] = (c.get("qty_per_pcs", 1) or 1) + 13
+                c["catatan_proses"] = (c.get("catatan_proses") or "") + " [REGEN]"
+        r = admin.put(f"{API}/products/{self.NEW}/recipe", json=new_rec)
+        assert r.status_code == 200, r.text
+
+        # Regenerate briefing on WO
+        r = admin.post(f"{API}/work-orders/{wo_num}/regenerate-briefing")
+        assert r.status_code == 200, r.text
+        wo = r.json()
+        assert wo.get("briefing"), "briefing should be regenerated"
+        # Now the briefing must include the newly changed cable
+        assert target["cable_code"] in wo["briefing"]["changed_recipe_codes"]
+
+    def test_regenerate_briefing_returns_none_for_root(self, admin):
+        wo_num = TestP2CBriefing.wo_v1_no_briefing
+        assert wo_num, "predecessor test did not run"
+        r = admin.post(f"{API}/work-orders/{wo_num}/regenerate-briefing")
+        assert r.status_code == 200, r.text
+        wo = r.json()
+        assert not wo.get("briefing"), "root product WO should not gain briefing on regenerate"
+
+    def test_regenerate_briefing_role_qc_403(self, qc):
+        wo_num = TestP2CBriefing.wo_with_briefing
+        r = qc.post(f"{API}/work-orders/{wo_num}/regenerate-briefing")
+        assert r.status_code == 403
+
+    def test_regenerate_briefing_wo_not_found(self, admin):
+        r = admin.post(f"{API}/work-orders/WO-NOT-EXIST-XYZ/regenerate-briefing")
+        assert r.status_code == 404
+
+    def test_cleanup_delete_wos(self, admin):
+        for wo in (TestP2CBriefing.wo_with_briefing, TestP2CBriefing.wo_v1_no_briefing):
+            if wo:
+                admin.delete(f"{API}/work-orders/{wo}")
+        # Cleanup V5 too
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        for coll in ("products", "product_cables", "product_bundles", "work_instructions",
+                     "relay_pin_maps", "qc_templates", "common_mistakes", "revision_history"):
+            db[coll].delete_many({"$or": [{"sku": TestP2CBriefing.NEW}, {"product_sku": TestP2CBriefing.NEW}]})
+        # Reset V1
+        db.products.update_one({"sku": SRC_SKU}, {"$unset": {"version_group": "", "parent_sku": "", "source_sku": ""}, "$set": {"status": "Released"}})
