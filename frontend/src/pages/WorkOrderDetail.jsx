@@ -22,6 +22,7 @@ import {
 import { WO_STATUSES, fmtDate, fmtDateTime } from "@/lib/utils-app";
 import { toast } from "sonner";
 import ProductionBriefing, { ChangedBadge, cableChangeKind, bundleChangeKind } from "@/components/ProductionBriefing";
+import ImageUploader from "@/components/ImageUploader";
 
 export default function WorkOrderDetail() {
   const { woNumber } = useParams();
@@ -356,7 +357,8 @@ function QcPanel({ qc, woNumber, onSaved }) {
         </TableHeader>
         <TableBody>
           {items.map((it, i) => (
-            <TableRow key={it.item_id} data-testid={`qc-row-${i}`}>
+            <React.Fragment key={it.item_id}>
+            <TableRow data-testid={`qc-row-${i}`}>
               <TableCell className="mono">{i + 1}</TableCell>
               <TableCell>
                 <div className="font-medium">{it.nama}</div>
@@ -376,6 +378,24 @@ function QcPanel({ qc, woNumber, onSaved }) {
                 <Input data-testid={`qc-note-${i}`} value={it.catatan || ""} onChange={(e) => updateItem(i, { catatan: e.target.value })} placeholder={it.pass_fail === "Fail" ? "Wajib isi jika Fail" : "Opsional"} disabled={!canEdit} />
               </TableCell>
             </TableRow>
+            {it.pass_fail === "Fail" && (hasRole(user, "Admin", "QC")) && (
+              <TableRow data-testid={`qc-evidence-row-${i}`}>
+                <TableCell></TableCell>
+                <TableCell colSpan={3} className="bg-red-50/40 border-l-4 border-l-red-300">
+                  <ImageUploader
+                    relatedType="qc_evidence"
+                    relatedId={`${woNumber}:${it.item_id}`}
+                    canUpload={true}
+                    title={`Foto Evidence QC Fail — ${it.nama}`}
+                    compact={true}
+                    emptyHint="Tambahkan foto sebagai bukti (opsional)."
+                    max={4}
+                    testIdPrefix={`qc-evidence-${i}`}
+                  />
+                </TableCell>
+              </TableRow>
+            )}
+            </React.Fragment>
           ))}
         </TableBody>
       </Table>

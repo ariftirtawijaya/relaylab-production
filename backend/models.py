@@ -372,3 +372,31 @@ class TrainingMatrix(BaseModel):
     tanggal_training: Optional[str] = None
     approved_by: Optional[str] = None
     catatan: Optional[str] = None
+
+
+# ---------- File Asset (Reference Photos for Phase P3A) ----------
+RelatedType = Literal[
+    "bundle",                 # related_id = bundle id
+    "work_instruction_step",  # related_id = "{wi_id}:{step_number}"
+    "common_mistake",         # related_id = common_mistake id
+    "qc_evidence",            # related_id = "{wo_number}:{qc_item_id}"
+]
+
+
+class FileAsset(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=gen_id)
+    storage_path: str
+    file_url: str            # `/api/files/{id}` — what frontend uses for <img src>
+    original_filename: str
+    mime_type: str
+    size: int
+    related_type: RelatedType
+    related_id: str
+    product_sku: Optional[str] = None  # for fast cleanup on clone/delete
+    caption: Optional[str] = None
+    notes: Optional[str] = None
+    uploaded_by: str
+    uploaded_at: str = Field(default_factory=now_iso)
+    is_deleted: bool = False
+

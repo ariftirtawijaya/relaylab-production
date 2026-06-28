@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, Save, X, ArrowUp, ArrowDown, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import ImageUploader from "../ImageUploader";
 
 export default function WorkInstructionEditor({ product, bundle, onClose, onSaved }) {
   const [steps, setSteps] = useState([]);
@@ -99,7 +100,20 @@ export default function WorkInstructionEditor({ product, bundle, onClose, onSave
               <div><Label className="text-xs">Tools</Label><Input className="h-8" value={s.tools} onChange={(e) => update(i, { tools: e.target.value })} placeholder="Crimping tool" /></div>
               <div><Label className="text-xs"><AlertTriangle className="w-3 h-3 inline mr-1 text-amber-600" />Safety</Label><Input className="h-8" value={s.safety} onChange={(e) => update(i, { safety: e.target.value })} /></div>
               <div><Label className="text-xs">Common Mistake</Label><Input className="h-8" value={s.common_mistake} onChange={(e) => update(i, { common_mistake: e.target.value })} /></div>
-              <div className="col-span-2 md:col-span-4"><Label className="text-xs">Foto URL (placeholder)</Label><Input className="h-8" value={s.foto_url} onChange={(e) => update(i, { foto_url: e.target.value })} placeholder="https://..." /></div>
+              <div className="col-span-2 md:col-span-4"><Label className="text-xs">Foto URL Eksternal (opsional, legacy)</Label><Input className="h-8" value={s.foto_url} onChange={(e) => update(i, { foto_url: e.target.value })} placeholder="https://..." /></div>
+              <div className="col-span-2 md:col-span-4 mt-2 pt-2 border-t border-slate-100">
+                <ImageUploader
+                  relatedType="work_instruction_step"
+                  relatedId={`${product.sku}:${bundle.bundle_code}:${i + 1}`}
+                  productSku={product.sku}
+                  canUpload={true}
+                  title={`Foto Step ${i + 1}`}
+                  compact
+                  emptyHint="Belum ada foto step."
+                  max={4}
+                  testIdPrefix={`wi-step-photo-${i}`}
+                />
+              </div>
             </div>
           </div>
         ))}

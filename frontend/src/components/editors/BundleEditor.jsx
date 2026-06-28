@@ -15,6 +15,7 @@ import {
 import { Plus, Trash2, Save, X, Pencil, AlertTriangle, FileText } from "lucide-react";
 import { toast } from "sonner";
 import WorkInstructionEditor from "./WorkInstructionEditor";
+import ImageUploader from "../ImageUploader";
 
 const empty = { bundle_code: "", bundle_name: "", fungsi_bundle: "", instruksi_singkat: "", target_relay_pin: "", urutan: 0 };
 
@@ -133,6 +134,22 @@ export default function BundleEditor({ product, onClose, onSaved }) {
             </div>
             {b.instruksi_singkat && <div className="text-xs text-slate-600 mt-2 border-t pt-2">{b.instruksi_singkat}</div>}
             {b.target_relay_pin && <div className="text-xs text-amber-700 mt-1">Target: <span className="font-mono">{b.target_relay_pin}</span></div>}
+            {b.id && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <ImageUploader
+                  relatedType="bundle"
+                  relatedId={b.id}
+                  productSku={product.sku}
+                  canUpload={true}
+                  title={`Foto Referensi Bundle ${b.bundle_code}`}
+                  compact
+                  emptyHint="Belum ada foto referensi."
+                  max={6}
+                  testIdPrefix={`bundle-photo-${b.bundle_code}`}
+                />
+              </div>
+            )}
+            {!b.id && <div className="mt-2 text-xs text-slate-400 italic">Simpan dulu untuk bisa upload foto.</div>}
           </div>
         ))}
         {bundles.length === 0 && <div className="col-span-2 text-center text-slate-500 py-8">Belum ada bundle.</div>}

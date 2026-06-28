@@ -35,6 +35,15 @@ async def startup():
     await db.cable_functions.create_index("cable_code", unique=True)
     await db.machine_programs.create_index("nomor_program", unique=True)
     await db.work_orders.create_index("wo_number", unique=True)
+    await db.file_assets.create_index("id", unique=True)
+    await db.file_assets.create_index([("related_type", 1), ("related_id", 1), ("is_deleted", 1)])
+    # init object storage (best-effort, app still serves if storage is down)
+    try:
+        from storage import init_storage
+        init_storage()
+        logger.info("Object storage initialized.")
+    except Exception as e:
+        logger.warning(f"Object storage init failed at startup: {e}. Uploads will retry lazily.")
 
 
 @app.on_event("shutdown")
@@ -54,7 +63,9 @@ app.add_middleware(
 
 
 from routes import router  # noqa: E402
+from routes_uploads import router as uploads_router  # noqa: E402
 app.include_router(router)
+app.include_router(uploads_router)
 
 
 @app.get("/api/")

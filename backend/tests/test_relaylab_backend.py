@@ -932,3 +932,148 @@ class TestP2CBriefing:
             db[coll].delete_many({"$or": [{"sku": TestP2CBriefing.NEW}, {"product_sku": TestP2CBriefing.NEW}]})
         # Reset V1
         db.products.update_one({"sku": SRC_SKU}, {"$unset": {"version_group": "", "parent_sku": "", "source_sku": ""}, "$set": {"status": "Released"}})
+
+# ============ P3A: Reference Photo Uploads ============
+import io
+import base64
+
+# Tiny 1x1 PNG
+_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+)
+
+
+def _png_file(name="test.png"):
+    return {"file": (name, io.BytesIO(_PNG_BYTES), "image/png")}
+
+
+class TestP3AUploads:
+    BUNDLE_ID = "p3a-test-bundle-id"
+    file_ids: list = []  # type: ignore[var-annotated]
+
+    @classmethod
+    def teardown_class(cls):
+        # Soft-delete any remaining test files using admin session
+        try:
+            s = _sess(ADMIN)
+            for fid in cls.file_ids:
+                try: s.delete(f"{API}/files/{fid}")
+                except Exception: pass
+        except Exception: pass
+
+    def _upload(self, sess, related_type, related_id, mime="image/png", caption=None, expect_status=200):
+        files = {"file": ("t.png", io.BytesIO(_PNG_BYTES), mime)}
+        data = {"related_type": related_type, "related_id": related_id}
+        if caption:
+            data["caption"] = caption
+        r = sess.post(f"{API}/uploads", files=files, data=data)
+        assert r.status_code == expect_status, f"{r.status_code} {r.text}"
+        return r
+
+    def test_upload_admin_bundle_ok(self, admin):
+        r = self._upload(admin, "bundle", self.BUNDLE_ID, caption="cap1")
+        d = r.json()
+        assert d["related_type"] == "bundle"
+        assert d["related_id"] == self.BUNDLE_ID
+        assert d["mime_type"] == "image/png"
+        assert d["size"] > 0
+        assert d["uploaded_by"]
+        assert d["file_url"].endswith(d["id"])
+        TestP3AUploads.file_ids.append(d["id"])
+
+    def test_list_files_returns_uploaded(self, admin):
+        r = admin.get(f"{API}/files", params={"related_type": "bundle", "related_id": self.BUNDLE_ID})
+        assert r.status_code == 200
+        items = r.json()
+        assert any(f["id"] in self.file_ids for f in items)
+
+    def test_download_no_auth_ok(self):
+        # Files are served without auth
+        fid = self.file_ids[0]
+        r = requests.get(f"{API}/files/{fid}", timeout=30)
+        assert r.status_code == 200
+        assert r.headers.get("content-type", "").startswith("image/")
+        assert r.content == _PNG_BYTES
+
+    def test_patch_caption(self, admin):
+        fid = self.file_ids[0]
+        r = admin.patch(f"{API}/files/{fid}", json={"caption": "Caption baru"})
+        assert r.status_code == 200, r.text
+        assert r.json()["caption"] == "Caption baru"
+
+    def test_bulk_by_related(self, admin):
+        r = admin.post(f"{API}/files/bulk-by-related", json={
+            "related_type": "bundle",
+            "related_ids": [self.BUNDLE_ID, "does-not-exist"],
+        })
+        assert r.status_code == 200
+        d = r.json()
+        assert self.BUNDLE_ID in d
+        assert "does-not-exist" not in d
+
+    def test_qc_can_upload_qc_evidence(self, qc):
+        r = self._upload(qc, "qc_evidence", "WO-TEST-001:qc-item-1")
+        TestP3AUploads.file_ids.append(r.json()["id"])
+
+    def test_qc_cannot_upload_bundle(self, qc):
+        self._upload(qc, "bundle", "another-id", expect_status=403)
+
+    def test_production_cannot_upload(self, prod):
+        self._upload(prod, "bundle", "another-id", expect_status=403)
+
+    def test_production_cannot_upload_qc(self, prod):
+        self._upload(prod, "qc_evidence", "WO-X:item", expect_status=403)
+
+    def test_reject_bad_mime(self, admin):
+        files = {"file": ("doc.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")}
+        data = {"related_type": "bundle", "related_id": "x"}
+        r = admin.post(f"{API}/uploads", files=files, data=data)
+        assert r.status_code == 415
+
+    def test_reject_bad_related_type(self, admin):
+        files = {"file": ("t.png", io.BytesIO(_PNG_BYTES), "image/png")}
+        data = {"related_type": "unknown_thing", "related_id": "x"}
+        r = admin.post(f"{API}/uploads", files=files, data=data)
+        assert r.status_code == 400
+
+    def test_reject_oversized(self, admin):
+        big = b"\x00" * (5 * 1024 * 1024 + 1)
+        files = {"file": ("big.png", io.BytesIO(big), "image/png")}
+        data = {"related_type": "bundle", "related_id": "x"}
+        r = admin.post(f"{API}/uploads", files=files, data=data)
+        assert r.status_code == 413
+
+    def test_qc_cannot_delete_bundle_photo(self, qc):
+        # First, admin file from earlier
+        bundle_fid = self.file_ids[0]
+        r = qc.delete(f"{API}/files/{bundle_fid}")
+        assert r.status_code == 403
+
+    def test_qc_can_delete_own_qc_evidence(self, qc):
+        # qc uploads then deletes
+        r = self._upload(qc, "qc_evidence", "WO-TEST-002:qc-item-1")
+        fid = r.json()["id"]
+        del_r = qc.delete(f"{API}/files/{fid}")
+        assert del_r.status_code == 200
+        # confirm 404 on download
+        d = requests.get(f"{API}/files/{fid}", timeout=30)
+        assert d.status_code == 404
+
+    def test_admin_delete_bundle_photo(self, admin):
+        fid = self.file_ids[0]
+        r = admin.delete(f"{API}/files/{fid}")
+        assert r.status_code == 200
+        # gone from list
+        items = admin.get(f"{API}/files", params={"related_type": "bundle", "related_id": self.BUNDLE_ID}).json()
+        assert all(f["id"] != fid for f in items)
+
+    def test_unauthenticated_upload_blocked(self):
+        files = {"file": ("t.png", io.BytesIO(_PNG_BYTES), "image/png")}
+        data = {"related_type": "bundle", "related_id": "x"}
+        r = requests.post(f"{API}/uploads", files=files, data=data, timeout=30)
+        assert r.status_code == 401
+
+    def test_file_not_found(self, admin):
+        r = admin.get(f"{API}/files/nonexistent-id-xyz")
+        assert r.status_code == 404
+

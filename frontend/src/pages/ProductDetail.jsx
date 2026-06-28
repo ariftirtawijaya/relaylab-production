@@ -17,6 +17,7 @@ import BundleEditor from "@/components/editors/BundleEditor";
 import PinMapEditor from "@/components/editors/PinMapEditor";
 import QcTemplateEditor from "@/components/editors/QcTemplateEditor";
 import CloneProductDialog from "@/components/CloneProductDialog";
+import { ImageGalleryReadOnly } from "@/components/ImageUploader";
 import { GitBranch } from "lucide-react";
 
 export default function ProductDetail() {
@@ -206,6 +207,15 @@ export default function ProductDetail() {
                     <Plug className="w-3 h-3" /> Target: <span className="font-mono">{b.target_relay_pin}</span>
                   </div>
                 )}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <ImageGalleryReadOnly
+                    relatedType="bundle"
+                    relatedId={b.id}
+                    compact={true}
+                    emptyHide={true}
+                    testIdPrefix={`product-bundle-photo-${b.bundle_code}`}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -290,14 +300,31 @@ export default function ProductDetail() {
         <TabsContent value="mistakes">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {mistakes.map((m) => (
-              <div key={m.id} className="bg-white border border-slate-200 rounded-md p-4">
+              <div key={m.id} className="bg-white border border-slate-200 rounded-md p-4" data-testid={`mistake-card-${m.id}`}>
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
-                  <div>
+                  <div className="flex-1">
                     <div className="font-semibold text-slate-900">{m.kesalahan}</div>
                     {m.bundle_code && <div className="text-xs text-slate-500 mt-0.5">Bundle {m.bundle_code}</div>}
                     <div className="text-sm text-slate-700 mt-2"><span className="font-semibold">Akibat:</span> {m.akibat}</div>
                     <div className="text-sm text-emerald-700 mt-1"><span className="font-semibold">Cara mencegah:</span> {m.cara_mencegah}</div>
+                    <div className="mt-3 pt-3 border-t border-slate-100">
+                      <ImageGalleryReadOnly
+                        relatedType="common_mistake"
+                        relatedId={m.id}
+                        compact={true}
+                        emptyHide={!hasRole(user, "Admin")}
+                        testIdPrefix={`mistake-photo-${m.id}`}
+                      />
+                      {hasRole(user, "Admin") && (
+                        <details className="mt-2">
+                          <summary className="text-xs text-amber-700 cursor-pointer hover:underline" data-testid={`mistake-manage-${m.id}`}>Kelola Foto</summary>
+                          <div className="mt-2">
+                            <AdminMistakeUploader sku={sku} mistakeId={m.id} />
+                          </div>
+                        </details>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -336,3 +363,22 @@ export default function ProductDetail() {
     </div>
   );
 }
+
+import ImageUploader from "@/components/ImageUploader";
+
+function AdminMistakeUploader({ sku, mistakeId }) {
+  return (
+    <ImageUploader
+      relatedType="common_mistake"
+      relatedId={mistakeId}
+      productSku={sku}
+      canUpload={true}
+      title="Upload / Hapus Foto"
+      compact={true}
+      emptyHint="Belum ada foto contoh kesalahan."
+      max={4}
+      testIdPrefix={`mistake-admin-${mistakeId}`}
+    />
+  );
+}
+

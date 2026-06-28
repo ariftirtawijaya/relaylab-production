@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { ArrowLeft, ArrowRight, AlertTriangle, Plug, Printer } from "lucide-react";
 import ProductionBriefing, { ChangedBadge, cableChangeKind, bundleChangeKind } from "@/components/ProductionBriefing";
+import { ImageGalleryReadOnly } from "@/components/ImageUploader";
 
 export default function BundleDetail() {
   const { woNumber, bundleCode } = useParams();
@@ -118,6 +119,15 @@ export default function BundleDetail() {
                 </div>
               )}
             </div>
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <ImageGalleryReadOnly
+                relatedType="bundle"
+                relatedId={bundle.id}
+                compact={true}
+                emptyHide={true}
+                testIdPrefix="bundle-detail-photo"
+              />
+            </div>
           </Section>
         </div>
       </div>
@@ -144,6 +154,20 @@ export default function BundleDetail() {
                   {s.safety && <div className="text-amber-700 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{s.safety}</div>}
                   {s.common_mistake && <div className="text-red-700">Hati-hati: {s.common_mistake}</div>}
                 </div>
+                <div className="ml-10 mt-2 space-y-2">
+                  {s.foto_url && (
+                    <a href={s.foto_url} target="_blank" rel="noreferrer" data-testid={`step-legacy-photo-${s.step_number}`}>
+                      <img src={s.foto_url} alt={`Step ${s.step_number}`} className="max-w-xs rounded border border-slate-200" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    </a>
+                  )}
+                  <ImageGalleryReadOnly
+                    relatedType="work_instruction_step"
+                    relatedId={`${wo.product_sku}:${bundle.bundle_code}:${s.step_number}`}
+                    compact={true}
+                    emptyHide={true}
+                    testIdPrefix={`step-photo-${s.step_number}`}
+                  />
+                </div>
               </div>
             </li>
           ))}
@@ -157,10 +181,19 @@ export default function BundleDetail() {
               <div key={m.id} className="border border-amber-200 bg-amber-50 rounded-md p-3 text-sm">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5" />
-                  <div>
+                  <div className="flex-1">
                     <div className="font-semibold text-slate-900">{m.kesalahan}</div>
                     <div className="mt-1"><span className="text-slate-500">Akibat:</span> {m.akibat}</div>
                     <div className="text-emerald-700 mt-0.5"><span className="font-semibold">Cara mencegah:</span> {m.cara_mencegah}</div>
+                    <div className="mt-2">
+                      <ImageGalleryReadOnly
+                        relatedType="common_mistake"
+                        relatedId={m.id}
+                        compact={true}
+                        emptyHide={true}
+                        testIdPrefix={`mistake-photo-${m.id}`}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
