@@ -102,6 +102,7 @@ class CloneProductInput(BaseModel):
     copy_pin_map: bool = True
     copy_qc_template: bool = True
     copy_common_mistakes: bool = True
+    copy_photos: bool = True
     hold_old: bool = False
 
 
@@ -396,6 +397,7 @@ class FileAsset(BaseModel):
     product_sku: Optional[str] = None  # for fast cleanup on clone/delete
     caption: Optional[str] = None
     notes: Optional[str] = None
+    source_file_id: Optional[str] = None  # set when this asset was created via Clone Photo
     uploaded_by: str
     uploaded_at: str = Field(default_factory=now_iso)
     is_deleted: bool = False

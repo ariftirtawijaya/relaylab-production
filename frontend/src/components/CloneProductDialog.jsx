@@ -23,6 +23,7 @@ export default function CloneProductDialog({ product, open, setOpen, onCloned })
     new_status: "Draft", catatan: "",
     copy_recipe: true, copy_bundles: true, copy_work_instructions: true,
     copy_pin_map: true, copy_qc_template: true, copy_common_mistakes: true,
+    copy_photos: true,
     hold_old: false,
   });
 
@@ -120,6 +121,7 @@ export default function CloneProductDialog({ product, open, setOpen, onCloned })
               {renderOption("copy_pin_map", "Salin Relay Pin Map")}
               {renderOption("copy_qc_template", "Salin QC Template")}
               {renderOption("copy_common_mistakes", "Salin Common Mistakes")}
+              {renderOption("copy_photos", "Salin Foto Referensi")}
             </div>
           </div>
 

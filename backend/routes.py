@@ -318,6 +318,10 @@ async def clone_product(sku: str, payload: CloneProductInput, request: Request, 
     if not source.get("version_group"):
         await db.products.update_one({"sku": source["sku"]}, {"$set": {"version_group": version_group}})
 
+    # Build id-mapping for photo cloning. We must capture old->new id maps for sections we're copying.
+    bundle_id_map: dict[str, str] = {}
+    mistake_id_map: dict[str, str] = {}
+
     copied = {}
 
     if payload.copy_recipe:
@@ -332,8 +336,11 @@ async def clone_product(sku: str, payload: CloneProductInput, request: Request, 
     if payload.copy_bundles:
         rows = await db.product_bundles.find({"product_sku": sku}, {"_id": 0}).to_list(500)
         for r in rows:
+            old_id = r.get("id")
             r["id"] = gen_id()
             r["product_sku"] = payload.new_sku
+            if old_id:
+                bundle_id_map[old_id] = r["id"]
         if rows:
             await db.product_bundles.insert_many(rows)
         copied["bundles"] = len(rows)
@@ -367,11 +374,114 @@ async def clone_product(sku: str, payload: CloneProductInput, request: Request, 
     if payload.copy_common_mistakes:
         rows = await db.common_mistakes.find({"product_sku": sku}, {"_id": 0}).to_list(500)
         for r in rows:
+            old_id = r.get("id")
             r["id"] = gen_id()
             r["product_sku"] = payload.new_sku
+            if old_id:
+                mistake_id_map[old_id] = r["id"]
         if rows:
             await db.common_mistakes.insert_many(rows)
         copied["common_mistakes"] = len(rows)
+
+    # ---- Salin Foto Referensi (Phase P3A enhancement) ----
+    # Only copy bundle / work_instruction_step / common_mistake photos. Never copy qc_evidence.
+    photos_copied = 0
+    if payload.copy_photos:
+        new_assets: list[dict] = []
+        now = now_iso()
+        uploader = user.get("name") or user.get("username") or "system"
+
+        # 1) Bundle photos — only if bundles were copied
+        if payload.copy_bundles and bundle_id_map:
+            cur = db.file_assets.find(
+                {"related_type": "bundle",
+                 "related_id": {"$in": list(bundle_id_map.keys())},
+                 "is_deleted": False},
+                {"_id": 0},
+            )
+            async for asset in cur:
+                new_id = gen_id()
+                new_assets.append({
+                    "id": new_id,
+                    "storage_path": asset["storage_path"],
+                    "file_url": f"/api/files/{new_id}",
+                    "original_filename": asset.get("original_filename"),
+                    "mime_type": asset.get("mime_type"),
+                    "size": asset.get("size"),
+                    "related_type": "bundle",
+                    "related_id": bundle_id_map[asset["related_id"]],
+                    "product_sku": payload.new_sku,
+                    "caption": asset.get("caption"),
+                    "notes": asset.get("notes"),
+                    "source_file_id": asset["id"],
+                    "uploaded_by": uploader,
+                    "uploaded_at": now,
+                    "is_deleted": False,
+                })
+
+        # 2) Work Instruction Step photos — only if WIs were copied.
+        # related_id format: "{sku}:{bundle_code}:{step}" — replace sku prefix.
+        if payload.copy_work_instructions:
+            prefix_old = f"{sku}:"
+            prefix_new = f"{payload.new_sku}:"
+            cur = db.file_assets.find(
+                {"related_type": "work_instruction_step",
+                 "related_id": {"$regex": f"^{re.escape(prefix_old)}"},
+                 "is_deleted": False},
+                {"_id": 0},
+            )
+            async for asset in cur:
+                new_id = gen_id()
+                new_assets.append({
+                    "id": new_id,
+                    "storage_path": asset["storage_path"],
+                    "file_url": f"/api/files/{new_id}",
+                    "original_filename": asset.get("original_filename"),
+                    "mime_type": asset.get("mime_type"),
+                    "size": asset.get("size"),
+                    "related_type": "work_instruction_step",
+                    "related_id": prefix_new + asset["related_id"][len(prefix_old):],
+                    "product_sku": payload.new_sku,
+                    "caption": asset.get("caption"),
+                    "notes": asset.get("notes"),
+                    "source_file_id": asset["id"],
+                    "uploaded_by": uploader,
+                    "uploaded_at": now,
+                    "is_deleted": False,
+                })
+
+        # 3) Common Mistake photos — only if mistakes were copied
+        if payload.copy_common_mistakes and mistake_id_map:
+            cur = db.file_assets.find(
+                {"related_type": "common_mistake",
+                 "related_id": {"$in": list(mistake_id_map.keys())},
+                 "is_deleted": False},
+                {"_id": 0},
+            )
+            async for asset in cur:
+                new_id = gen_id()
+                new_assets.append({
+                    "id": new_id,
+                    "storage_path": asset["storage_path"],
+                    "file_url": f"/api/files/{new_id}",
+                    "original_filename": asset.get("original_filename"),
+                    "mime_type": asset.get("mime_type"),
+                    "size": asset.get("size"),
+                    "related_type": "common_mistake",
+                    "related_id": mistake_id_map[asset["related_id"]],
+                    "product_sku": payload.new_sku,
+                    "caption": asset.get("caption"),
+                    "notes": asset.get("notes"),
+                    "source_file_id": asset["id"],
+                    "uploaded_by": uploader,
+                    "uploaded_at": now,
+                    "is_deleted": False,
+                })
+
+        if new_assets:
+            await db.file_assets.insert_many(new_assets)
+        photos_copied = len(new_assets)
+        copied["photos"] = photos_copied
 
     # Revision entries
     note_new = payload.catatan or f"Produk dibuat dari clone SKU: {sku}"
@@ -382,6 +492,15 @@ async def clone_product(sku: str, payload: CloneProductInput, request: Request, 
         "alasan": note_new,
         "catatan_approval": f"Clone dari {sku}",
     })
+
+    if payload.copy_photos and photos_copied > 0:
+        await db.revision_history.insert_one({
+            "id": gen_id(), "product_sku": payload.new_sku, "versi": payload.new_versi,
+            "tanggal": now_iso(), "diubah_oleh": user["name"],
+            "bagian_berubah": "Foto Referensi",
+            "alasan": f"Foto referensi disalin dari {sku} ({photos_copied} foto)",
+            "catatan_approval": None,
+        })
 
     if payload.hold_old:
         await db.products.update_one(

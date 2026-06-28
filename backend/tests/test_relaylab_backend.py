@@ -1077,3 +1077,240 @@ class TestP3AUploads:
         r = admin.get(f"{API}/files/nonexistent-id-xyz")
         assert r.status_code == 404
 
+
+
+# ============ P3A enhancement: Salin Foto Referensi pada Clone ============
+class TestP3APhotoClone:
+    NEW = "RFL-AOD-H11-V7"
+    SRC = SRC_SKU
+    bundle_old_id = None
+    bundle_new_id = None
+    bundle_old_code = None
+    mistake_old_id = None
+    mistake_new_id = None
+    src_photo_ids: list = []   # photos created on V1 for testing
+    new_photo_ids: list = []   # photos cloned to V7
+
+    @pytest.fixture(scope="class")
+    def setup_src_photos(self, admin):
+        """Ensure V1 has at least one photo per related_type, then return mapping for use in tests."""
+        # Cleanup any prior V7
+        s = _sess(ADMIN)
+        s.delete(f"{API}/work-orders/_noop")  # noop
+        # Hard cleanup via motor in case prior test left state
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        for coll in ("products", "product_cables", "product_bundles", "work_instructions",
+                     "relay_pin_maps", "qc_templates", "common_mistakes", "revision_history"):
+            db[coll].delete_many({"$or": [{"sku": self.NEW}, {"product_sku": self.NEW}]})
+        # remove any prior test photos on V1 created by this class
+        db.file_assets.delete_many({"product_sku": self.SRC, "uploaded_by": {"$in": ["Arif"]},
+                                    "caption": {"$regex": "^P3A-CLONE-TEST"}})
+
+        # Find a bundle on V1 and a mistake on V1
+        bundles = admin.get(f"{API}/products/{self.SRC}/bundles").json()
+        mistakes = admin.get(f"{API}/products/{self.SRC}/common-mistakes").json()
+        assert bundles and mistakes, "seed must have bundles/mistakes"
+
+        bundle = bundles[0]
+        mistake = mistakes[0]
+        wi_bundle_code = bundle["bundle_code"]  # work_instruction is keyed by bundle_code
+
+        TestP3APhotoClone.bundle_old_id = bundle["id"]
+        TestP3APhotoClone.bundle_old_code = bundle["bundle_code"]
+        TestP3APhotoClone.mistake_old_id = mistake["id"]
+
+        # Upload 3 photos on V1
+        def up(rt, rid, caption):
+            files = {"file": ("t.png", io.BytesIO(_PNG_BYTES), "image/png")}
+            data = {"related_type": rt, "related_id": rid, "product_sku": self.SRC, "caption": caption}
+            r = admin.post(f"{API}/uploads", files=files, data=data)
+            assert r.status_code == 200, r.text
+            return r.json()["id"]
+
+        a = up("bundle", bundle["id"], "P3A-CLONE-TEST bundle photo")
+        b = up("work_instruction_step", f"{self.SRC}:{wi_bundle_code}:1", "P3A-CLONE-TEST step photo")
+        c = up("common_mistake", mistake["id"], "P3A-CLONE-TEST mistake photo")
+        TestP3APhotoClone.src_photo_ids = [a, b, c]
+        return {"bundle_id": bundle["id"], "wi_bundle_code": wi_bundle_code, "mistake_id": mistake["id"]}
+
+    def test_clone_with_copy_photos_creates_metadata(self, admin, setup_src_photos):
+        r = admin.post(f"{API}/products/{self.SRC}/clone", json={
+            "new_sku": self.NEW, "new_nama_produk": "Clone Photo Test", "new_versi": "V7",
+            "new_status": "Trial",
+            "copy_recipe": True, "copy_bundles": True, "copy_work_instructions": True,
+            "copy_pin_map": True, "copy_qc_template": True, "copy_common_mistakes": True,
+            "copy_photos": True, "hold_old": False,
+        })
+        assert r.status_code == 200, r.text
+        copied = r.json()["copied"]
+        # 3 photos expected (1 bundle + 1 step + 1 mistake)
+        assert copied.get("photos") == 3, f"photos copied={copied.get('photos')}"
+
+        # Capture new bundle/mistake ids
+        new_bundles = admin.get(f"{API}/products/{self.NEW}/bundles").json()
+        new_mistakes = admin.get(f"{API}/products/{self.NEW}/common-mistakes").json()
+        new_b = next(b for b in new_bundles if b["bundle_code"] == self.bundle_old_code)
+        new_m = next(m for m in new_mistakes if m["kesalahan"] == admin.get(f"{API}/products/{self.SRC}/common-mistakes").json()[0]["kesalahan"])
+        TestP3APhotoClone.bundle_new_id = new_b["id"]
+        TestP3APhotoClone.mistake_new_id = new_m["id"]
+        assert new_b["id"] != self.bundle_old_id
+        assert new_m["id"] != self.mistake_old_id
+
+    def test_cloned_bundle_has_photo_linked_to_source(self, admin):
+        r = admin.get(f"{API}/files", params={"related_type": "bundle", "related_id": self.bundle_new_id})
+        assert r.status_code == 200
+        items = r.json()
+        assert len(items) == 1
+        a = items[0]
+        # Source link tracked
+        assert a["source_file_id"] == self.src_photo_ids[0]
+        # New file_url points to new id
+        assert a["file_url"] == f"/api/files/{a['id']}"
+        # Storage path SAME as source (no duplicate upload)
+        src = admin.get(f"{API}/files", params={"related_type": "bundle", "related_id": self.bundle_old_id}).json()[0]
+        assert a["storage_path"] == src["storage_path"]
+        # Caption initial value copied
+        assert a["caption"] == src["caption"]
+        # product_sku is new
+        assert a["product_sku"] == self.NEW
+        TestP3APhotoClone.new_photo_ids.append(a["id"])
+
+    def test_cloned_step_photo(self, admin):
+        new_rid = f"{self.NEW}:{self.bundle_old_code}:1"
+        r = admin.get(f"{API}/files", params={"related_type": "work_instruction_step", "related_id": new_rid})
+        assert r.status_code == 200
+        items = r.json()
+        assert len(items) == 1
+        a = items[0]
+        assert a["source_file_id"] == self.src_photo_ids[1]
+        assert a["product_sku"] == self.NEW
+        TestP3APhotoClone.new_photo_ids.append(a["id"])
+
+    def test_cloned_mistake_photo(self, admin):
+        r = admin.get(f"{API}/files", params={"related_type": "common_mistake", "related_id": self.mistake_new_id})
+        items = r.json()
+        assert len(items) == 1
+        a = items[0]
+        assert a["source_file_id"] == self.src_photo_ids[2]
+        TestP3APhotoClone.new_photo_ids.append(a["id"])
+
+    def test_delete_on_clone_does_not_delete_source(self, admin):
+        clone_pid = self.new_photo_ids[0]
+        src_pid = self.src_photo_ids[0]
+        r = admin.delete(f"{API}/files/{clone_pid}")
+        assert r.status_code == 200
+        # source still downloadable
+        d = requests.get(f"{API}/files/{src_pid}", timeout=30)
+        assert d.status_code == 200, "deleting clone photo must NOT affect source"
+        # clone is gone
+        d2 = requests.get(f"{API}/files/{clone_pid}", timeout=30)
+        assert d2.status_code == 404
+
+    def test_caption_edit_on_clone_independent(self, admin):
+        # Mistake photo: edit caption on clone
+        clone_pid = self.new_photo_ids[2]
+        src_pid = self.src_photo_ids[2]
+        r = admin.patch(f"{API}/files/{clone_pid}", json={"caption": "Caption khusus V7"})
+        assert r.status_code == 200
+        # source caption unchanged
+        src = admin.get(f"{API}/files", params={"related_type": "common_mistake", "related_id": self.mistake_old_id}).json()[0]
+        assert src["caption"] == "P3A-CLONE-TEST mistake photo"
+        assert src["id"] == src_pid
+
+    def test_replace_on_clone_creates_new_storage_object(self, admin):
+        """When user replaces a cloned photo, frontend uploads a NEW file then soft-deletes the old.
+        Simulate this and confirm new storage_path differs from source's storage_path."""
+        clone_pid = self.new_photo_ids[1]
+        src_pid = self.src_photo_ids[1]
+        src_doc = admin.get(f"{API}/files", params={"related_type": "work_instruction_step",
+                                                     "related_id": f"{self.SRC}:{TestP3APhotoClone.bundle_old_code}:1"}).json()[0]
+        new_rid = f"{self.NEW}:{TestP3APhotoClone.bundle_old_code}:1"
+
+        # Upload new photo for that same related_id
+        files = {"file": ("replace.png", io.BytesIO(_PNG_BYTES + b"x"), "image/png")}
+        data = {"related_type": "work_instruction_step", "related_id": new_rid, "product_sku": self.NEW}
+        r = admin.post(f"{API}/uploads", files=files, data=data)
+        assert r.status_code == 200
+        new_doc = r.json()
+        assert new_doc["storage_path"] != src_doc["storage_path"], "replace must not share storage with source"
+        admin.delete(f"{API}/files/{clone_pid}")
+        src_check = requests.get(f"{API}/files/{src_pid}", timeout=30)
+        assert src_check.status_code == 200
+
+    def test_revision_history_records_photo_copy(self, admin):
+        r = admin.get(f"{API}/products/{self.NEW}/revisions")
+        if r.status_code == 404:
+            # endpoint name may differ; try alt
+            r = admin.get(f"{API}/products/{self.NEW}/revision-history")
+        # Accept either 200 with content; if endpoint doesn't exist, fall back to direct DB check
+        if r.status_code == 200:
+            revs = r.json()
+            assert any("Foto referensi" in (x.get("bagian_berubah") or "") or
+                       "Foto referensi disalin" in (x.get("alasan") or "") for x in revs), revs
+        else:
+            # direct DB check
+            import pymongo, os
+            from dotenv import load_dotenv
+            load_dotenv("/app/backend/.env")
+            cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+            db = cli[os.environ.get("DB_NAME", "test_database")]
+            found = db.revision_history.find_one({
+                "product_sku": self.NEW,
+                "bagian_berubah": "Foto Referensi",
+            })
+            assert found, "revision_history must include 'Foto Referensi' entry on clone with copy_photos=true"
+
+    def test_clone_without_copy_photos(self, admin):
+        # Clone again to V8 without copy_photos
+        sku2 = "RFL-AOD-H11-V8"
+        # Cleanup first
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        for coll in ("products", "product_cables", "product_bundles", "work_instructions",
+                     "relay_pin_maps", "qc_templates", "common_mistakes", "revision_history", "file_assets"):
+            db[coll].delete_many({"$or": [{"sku": sku2}, {"product_sku": sku2}]})
+
+        r = admin.post(f"{API}/products/{self.SRC}/clone", json={
+            "new_sku": sku2, "new_nama_produk": "No Photos", "new_versi": "V8",
+            "new_status": "Trial",
+            "copy_recipe": True, "copy_bundles": True, "copy_work_instructions": True,
+            "copy_pin_map": True, "copy_qc_template": True, "copy_common_mistakes": True,
+            "copy_photos": False, "hold_old": False,
+        })
+        assert r.status_code == 200, r.text
+        assert "photos" not in r.json()["copied"] or r.json()["copied"].get("photos") == 0
+        # Verify no file_assets on V8
+        cnt = db.file_assets.count_documents({"product_sku": sku2, "is_deleted": False})
+        assert cnt == 0
+        # cleanup
+        for coll in ("products", "product_cables", "product_bundles", "work_instructions",
+                     "relay_pin_maps", "qc_templates", "common_mistakes", "revision_history", "file_assets"):
+            db[coll].delete_many({"$or": [{"sku": sku2}, {"product_sku": sku2}]})
+
+    def test_cleanup(self, admin):
+        # Hard delete test data
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        for coll in ("products", "product_cables", "product_bundles", "work_instructions",
+                     "relay_pin_maps", "qc_templates", "common_mistakes", "revision_history"):
+            db[coll].delete_many({"$or": [{"sku": self.NEW}, {"product_sku": self.NEW}]})
+        # Remove all test file_assets created by this class
+        db.file_assets.delete_many({"$or": [
+            {"product_sku": self.NEW},
+            {"id": {"$in": TestP3APhotoClone.src_photo_ids + TestP3APhotoClone.new_photo_ids}},
+            {"caption": {"$regex": "^P3A-CLONE-TEST"}},
+            {"caption": "Caption khusus V7"},
+        ]})
+        # Restore V1 if marked Hold
+        db.products.update_one({"sku": self.SRC}, {"$unset": {"version_group": "", "parent_sku": "", "source_sku": ""},
+                                                   "$set": {"status": "Released"}})
