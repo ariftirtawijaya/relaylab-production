@@ -117,8 +117,7 @@ mandatory-color cables like power/ground).
 - **PWA / Offline / Service Worker** — Internal app used purely via desktop and tablet browsers on the workshop floor. No installable PWA, no offline cache, no sync. Use browser-based responsive UX instead.
 
 ## Phase P3A-bis (v1.6, Feb 2026) — "Salin Foto Referensi" on Clone
-- Clone dialog adds checkbox **Salin Foto Referensi** (default ON, alongside other 6 copy toggles).
-- Clone endpoint extension: when `copy_photos=true` AND the relevant section was also copied (bundles / WI / mistakes), backend creates new `FileAsset` metadata rows for bundle / work_instruction_step / common_mistake photos. **No physical re-upload.** Each clone:
+- Clone dialog adds checkbox **Salin Foto Referensi** (default ON, alongside other 6 copy toggles).- Clone endpoint extension: when `copy_photos=true` AND the relevant section was also copied (bundles / WI / mistakes), backend creates new `FileAsset` metadata rows for bundle / work_instruction_step / common_mistake photos. **No physical re-upload.** Each clone:
   - Gets a fresh `id` (uuid) and `file_url = /api/files/{new_id}`.
   - **Reuses the source `storage_path`** (same image bytes served from one storage object) — safe because storage is reference-only; soft-delete on clone never removes the object.
   - Replaces `related_id` via `bundle_id_map[old]→new`, `mistake_id_map[old]→new`, or step-prefix swap (`{src_sku}:` → `{new_sku}:`).
@@ -144,6 +143,28 @@ mandatory-color cables like power/ground).
 - `/app/frontend/src/components/Layout.jsx` — Sidebar + topbar + change-password
 - `/app/frontend/src/pages/*` — Page components
 - `/app/frontend/src/pages/print/*` — Print-friendly pages
+- `/app/frontend/src/pages/operator/*` — Fullscreen dark Operator View (Phase P3B)
+
+## Phase P3B (v1.7, Feb 2026) — Operator View untuk Tablet/Desktop Produksi
+- Two new browser routes (no Layout wrapper, dark fullscreen):
+  - `/operator/work-orders/:woNumber` — WO summary + bundle cards w/ progress badges
+  - `/operator/work-orders/:woNumber/bundles/:bundleCode` — distraction-free bundle ops page
+- Backend:
+  - New `OperatorProgress` model + `operator_progress` collection with unique index `(wo_number, bundle_code, step_number)`.
+  - `GET /api/work-orders/{wo}/operator-progress` (any role) → `{wo_number, items[], summary[{bundle_code, bundle_name, total_steps, checked_steps, completed}]}`. Total steps derived from `work_instructions[bundle_code].steps`.
+  - `POST /api/work-orders/{wo}/operator-progress` (Admin/Production) upserts `{bundle_code, step_number, checked}` and records `checked_by` + `checked_at` on check, clears them on uncheck.
+- Frontend:
+  - `OperatorWorkOrder.jsx` — WO header (huge WO number, qty), Production Briefing if present, bundle card grid with per-bundle progress bar + Selesai badge.
+  - `OperatorBundle.jsx` — 6xl bundle code, target relay pin, sticky top bar, cable list as cards (no horizontal scroll), Work Instruction steps as big cards with 56×56 checkbox buttons (CheckCircle2 when checked), Common Mistakes block, Prev/Next bundle nav, full-screen photo lightbox.
+  - `OperatorPhotoGallery` component: bigger thumbs (h-32/h-40), click → fixed z-50 dark lightbox, click anywhere closes.
+  - Production Briefing & ChangedBadge integrated (operator sees changed cables/bundles too).
+  - "Mode Operator" entry buttons added on `WorkOrderDetail` (`data-testid=wo-open-operator-mode`) and `BundleDetail` (`bundle-open-operator-mode`).
+  - QC role sees the operator view in read-only mode (`aria-disabled`, "Hanya lihat" badge); GET endpoint allowed, POST 403.
+- Tablet/Desktop UX: minimum 48–56px touch targets, no horizontal scroll on operator pages, text-lg/xl headings, large checkbox buttons.
+- Backend tests: 106/106 GREEN (10 new TestP3BOperatorProgress: empty-initial, check updates summary, all-checked → completed=true, uncheck clears metadata, idempotent upsert, QC read-only, unauth 401, WO 404, isolation across WOs).
+- Frontend E2E: 100% via testing_agent (iteration_10) — all 13 review scenarios GREEN.
+- Files: `/app/backend/models.py` (OperatorProgress), `/app/backend/routes.py` (GET/POST endpoints), `/app/backend/server.py` (index), `/app/frontend/src/App.js` (routes), `/app/frontend/src/pages/operator/OperatorWorkOrder.jsx`, `/app/frontend/src/pages/operator/OperatorBundle.jsx`, plus entry buttons in `WorkOrderDetail.jsx` / `BundleDetail.jsx`.
+
 
 ## Bahasa
 All UI labels in Bahasa Indonesia (e.g., Perintah Kerja, Master Kabel, Program Mesin, Cetak, Simpan, Hapus).

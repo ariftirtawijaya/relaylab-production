@@ -207,6 +207,8 @@ export default function OperatorBundle() {
                         type="button"
                         onClick={() => toggleStep(s.step_number, isChecked)}
                         disabled={!canCheck || busy[s.step_number]}
+                        aria-disabled={!canCheck}
+                        aria-pressed={isChecked}
                         className={`flex-shrink-0 w-14 h-14 rounded-lg border-2 flex items-center justify-center transition-colors ${
                           isChecked
                             ? "bg-emerald-500 border-emerald-400"
