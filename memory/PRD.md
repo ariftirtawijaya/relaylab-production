@@ -74,6 +74,28 @@ mandatory-color cables like power/ground).
 - Backend tests: 69/69 (8 new TestP2CBriefing tests: cloned-WO attach, root-WO no briefing, GET returns briefing, regenerate after mutation, regenerate root returns none, QC role 403, 404, cleanup).
 - Frontend E2E: 100% via testing_agent (iteration_7).
 
+## Phase P3A (v1.5, Feb 2026) — Reference Photo Uploads (Object Storage)
+- New backend module `storage.py` integrates Emergent Object Storage (init at startup, automatic 403 re-init, JPG/PNG/WEBP whitelist, 5 MB cap). Storage paths follow `relaylab/uploads/{related_type}/{uuid}.{ext}`.
+- New `FileAsset` model + collection `file_assets`. DB stores only metadata (storage_path, file_url, mime_type, size, related_type, related_id, product_sku, caption, uploaded_by, uploaded_at, is_deleted). **No base64 in DB.**
+- `routes_uploads.py` endpoints (all under `/api`):
+  - `POST /uploads` (multipart) — Admin all types, QC only `qc_evidence`, Production blocked.
+  - `GET /files/{id}` — public (no auth) so `<img src>` works directly; bytes streamed from object storage with `Cache-Control: public, max-age=3600`.
+  - `PATCH /files/{id}` — Admin all, QC qc_evidence only — caption/notes.
+  - `DELETE /files/{id}` — Admin all, QC qc_evidence only (soft-delete via `is_deleted`).
+  - `GET /files?related_type=&related_id=` — list.
+  - `POST /files/bulk-by-related` — batch fetch grouped by related_id.
+- Frontend `ImageUploader.jsx` (with named `ImageGalleryReadOnly`): client-side MIME+size validation w/ sonner toasts, drag-hover action buttons (view/replace/caption/delete), lightbox modal, caption editor. Stable test-id contract `{prefix}-root|-upload-btn|-item-{id}|-thumb-{id}|-view-{id}|-replace-{id}|-caption-{id}|-delete-{id}|-empty`.
+- Integrated into 4 surfaces:
+  - **Bundle photos** (related_id=bundle.id): BundleEditor (admin) + ProductDetail Bundle tab (display) + BundleDetail QR page (display).
+  - **Work Instruction Step photos** (related_id=`{sku}:{bundle}:{step}`): WorkInstructionEditor (admin) + BundleDetail steps (display + legacy `foto_url` fallback `<img>`).
+  - **Common Mistake photos** (related_id=mistake.id): ProductDetail Mistakes tab with admin-only `<details>` "Kelola Foto" section + BundleDetail mistake cards (display).
+  - **QC Fail Evidence** (related_id=`{wo_number}:{item_id}`): WorkOrderDetail QcPanel — inline row appears only when item.pass_fail === "Fail"; Admin/QC can upload; foto tetap di DB saat switch back to Pass.
+- Backward compat: existing `foto_url` fields on bundle/step/mistake/qc_result_item preserved & still displayed (BundleDetail step section renders legacy URL via `<img onError>` graceful fallback).
+- RBAC matrix: Admin = upload/edit/delete all; QC = upload+edit+delete qc_evidence only; Production = read-only on everything.
+- Backend tests: 86/86 (17 new TestP3AUploads: upload OK, list, public download, patch caption, bulk, RBAC for Admin/QC/Production, bad MIME 415, bad related_type 400, oversized 413, qc cannot delete bundle photo, qc can delete own qc evidence, admin delete, unauth 401, 404).
+- Frontend E2E: 100% (10/10 review items GREEN in iteration_8).
+- Files: `/app/backend/storage.py`, `/app/backend/routes_uploads.py`, `/app/frontend/src/components/ImageUploader.jsx`.
+
 ## Backlog (P1)
 - Foto upload for bundles/instructions/mistakes (object storage)
 - Edit UI for product recipe/bundles/work-instructions/pin-map (currently CRUD by JSON; structure is editable but UI forms not yet built)
