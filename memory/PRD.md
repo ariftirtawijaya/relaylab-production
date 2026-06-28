@@ -97,16 +97,42 @@ mandatory-color cables like power/ground).
 - Files: `/app/backend/storage.py`, `/app/backend/routes_uploads.py`, `/app/frontend/src/components/ImageUploader.jsx`.
 
 ## Backlog (P1)
-- Foto upload for bundles/instructions/mistakes (object storage)
-- Edit UI for product recipe/bundles/work-instructions/pin-map (currently CRUD by JSON; structure is editable but UI forms not yet built)
+- Foto upload for bundles/instructions/mistakes (object storage) — **DONE in Phase P3A (v1.5)**
+- Edit UI for product recipe/bundles/work-instructions/pin-map — **DONE in Phase P1**
 - Export PDF (currently browser print only)
 - Multi-page navigation for printable bundle labels (one-per-page mode)
 
 ## Backlog (P2)
+- Export to PDF (true PDF generator, not just browser print)
 - Inventory / stock substitution suggestions
 - Reseller portal / order ingestion
 - Skill-based WO assignment (use Training Matrix)
 - WO progress events log / audit trail
+- Tablet/desktop UX polish (touch-friendly buttons, horizontal-scroll tables, mobile-friendly Bundle Detail QR)
+- Refactor `/app/backend/routes.py` (~1330 lines) into per-domain modules
+- Sweeper job to hard-delete object storage objects whose FileAsset is `is_deleted=true` AND not referenced by any active FileAsset (shared storage_path safety)
+- Per-product file listing endpoint (GET /api/files?product_sku=…) for audit/cleanup
+
+## Explicitly Dropped (was on roadmap, removed Feb 2026)
+- **PWA / Offline / Service Worker** — Internal app used purely via desktop and tablet browsers on the workshop floor. No installable PWA, no offline cache, no sync. Use browser-based responsive UX instead.
+
+## Phase P3A-bis (v1.6, Feb 2026) — "Salin Foto Referensi" on Clone
+- Clone dialog adds checkbox **Salin Foto Referensi** (default ON, alongside other 6 copy toggles).
+- Clone endpoint extension: when `copy_photos=true` AND the relevant section was also copied (bundles / WI / mistakes), backend creates new `FileAsset` metadata rows for bundle / work_instruction_step / common_mistake photos. **No physical re-upload.** Each clone:
+  - Gets a fresh `id` (uuid) and `file_url = /api/files/{new_id}`.
+  - **Reuses the source `storage_path`** (same image bytes served from one storage object) — safe because storage is reference-only; soft-delete on clone never removes the object.
+  - Replaces `related_id` via `bundle_id_map[old]→new`, `mistake_id_map[old]→new`, or step-prefix swap (`{src_sku}:` → `{new_sku}:`).
+  - Initial caption/notes copied; tracked via `source_file_id` for provenance.
+  - `product_sku` = new SKU (also auto-derived by upload endpoint now, for /api/uploads parity).
+- **QC fail evidence (`qc_evidence`) is NEVER copied** — by design, evidence belongs to a specific WO.
+- Revision history entry added: `"Foto Referensi" — "Foto referensi disalin dari {src} ({N} foto)"`.
+- Independence guarantees:
+  - **Delete on clone** = soft-delete only (`is_deleted=true`); source FileAsset and storage object unchanged.
+  - **Replace on clone** = uploader creates a brand-new storage object via POST /uploads; source's `storage_path` untouched.
+  - **Caption/notes edit on clone** = scoped to the clone's `id` only; source unaffected.
+- Backend tests: 96/96 (10 new TestP3APhotoClone tests).
+- Frontend E2E: 100% via testing_agent iteration_9.
+- Files: `/app/backend/models.py` (FileAsset.source_file_id, CloneProductInput.copy_photos), `/app/backend/routes.py` (clone block), `/app/backend/routes_uploads.py` (auto-derive product_sku), `/app/frontend/src/components/CloneProductDialog.jsx`.
 
 ## Key Files
 - `/app/backend/server.py` — FastAPI bootstrap, indexes, seed trigger

@@ -68,13 +68,28 @@ async def upload_file(
     file_id = gen_id()
     path = f"{APP_NAME}/uploads/{related_type}/{file_id}.{ext}"
 
+    # Auto-derive product_sku when not explicitly provided, to ease cleanup audits.
+    db = get_db(request)
+    if not product_sku:
+        if related_type == "bundle":
+            doc = await db.product_bundles.find_one({"id": related_id}, {"product_sku": 1, "_id": 0})
+            if doc:
+                product_sku = doc.get("product_sku")
+        elif related_type == "common_mistake":
+            doc = await db.common_mistakes.find_one({"id": related_id}, {"product_sku": 1, "_id": 0})
+            if doc:
+                product_sku = doc.get("product_sku")
+        elif related_type == "work_instruction_step":
+            # related_id format: "{sku}:{bundle_code}:{step}"
+            parts = (related_id or "").split(":")
+            if parts and parts[0]:
+                product_sku = parts[0]
+
     try:
         result = put_object(path, data, mime)
     except Exception as e:
         logger.exception("Upload to object storage failed")
         raise HTTPException(status_code=502, detail=f"Gagal upload ke storage: {e}")
-
-    db = get_db(request)
     asset = FileAsset(
         id=file_id,
         storage_path=result.get("path", path),
