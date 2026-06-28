@@ -72,3 +72,12 @@ app.include_router(uploads_router)
 @app.get("/api/")
 async def api_root():
     return {"app": "RelayLab Production System", "ok": True}
+
+
+@app.get("/api/health")
+async def api_health():
+    try:
+        await db.command("ping")
+        return {"ok": True, "mongo": "up"}
+    except Exception as e:
+        return {"ok": False, "mongo": "down", "error": str(e)}

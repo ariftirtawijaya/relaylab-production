@@ -1,0 +1,58 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: relaylab-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - relaylab-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: relaylab-backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: relaylab_production
+      CORS_ORIGINS: "*"
+      APP_NAME: relaylab
+      EMERGENT_LLM_KEY: ${EMERGENT_LLM_KEY}
+    networks:
+      - relaylab-net
+    expose:
+      - "8001"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Empty value -> api.js produces "/api" (same-origin via Nginx proxy)
+        REACT_APP_BACKEND_URL: ""
+    container_name: relaylab-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - relaylab-net
+
+volumes:
+  mongo_data:
+    driver: local
+
+networks:
+  relaylab-net:
+    driver: bridge
