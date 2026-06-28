@@ -46,6 +46,11 @@ export default function BundleDetail() {
         actions={
           <div className="flex gap-2">
             <Link to={`/work-orders/${wo.wo_number}`}><Button variant="outline"><ArrowLeft className="w-4 h-4 mr-2" />Kembali ke WO</Button></Link>
+            <Link to={`/operator/work-orders/${wo.wo_number}/bundles/${bundle.bundle_code}`}>
+              <Button variant="outline" className="bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100" data-testid="bundle-open-operator-mode">
+                Mode Operator
+              </Button>
+            </Link>
             <Button variant="outline" onClick={() => window.print()} data-testid="bundle-print"><Printer className="w-4 h-4 mr-2" />Cetak</Button>
           </div>
         }

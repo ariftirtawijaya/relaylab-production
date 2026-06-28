@@ -37,6 +37,7 @@ async def startup():
     await db.work_orders.create_index("wo_number", unique=True)
     await db.file_assets.create_index("id", unique=True)
     await db.file_assets.create_index([("related_type", 1), ("related_id", 1), ("is_deleted", 1)])
+    await db.operator_progress.create_index([("wo_number", 1), ("bundle_code", 1), ("step_number", 1)], unique=True)
     # init object storage (best-effort, app still serves if storage is down)
     try:
         from storage import init_storage

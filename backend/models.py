@@ -402,3 +402,15 @@ class FileAsset(BaseModel):
     uploaded_at: str = Field(default_factory=now_iso)
     is_deleted: bool = False
 
+
+
+# ---------- Operator Step Progress (Phase P3B) ----------
+class OperatorProgress(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=gen_id)
+    wo_number: str
+    bundle_code: str
+    step_number: int
+    checked: bool = False
+    checked_by: Optional[str] = None
+    checked_at: Optional[str] = None

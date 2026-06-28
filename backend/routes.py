@@ -1341,3 +1341,89 @@ async def dashboard_stats(request: Request, _: dict = Depends(get_current_user))
     recent = await db.work_orders.find({}, {"_id": 0}).sort("created_at", -1).limit(10).to_list(10)
     stats["recent"] = recent
     return stats
+
+
+
+# ============ Operator Progress (Phase P3B) ============
+from pydantic import BaseModel as _BaseModel
+
+class OperatorProgressInput(_BaseModel):
+    bundle_code: str
+    step_number: int
+    checked: bool
+
+
+@router.get("/work-orders/{wo_number}/operator-progress")
+async def get_operator_progress(wo_number: str, request: Request, _: dict = Depends(get_current_user)):
+    """Returns all step checks + per-bundle progress summary for a WO."""
+    db = get_db(request)
+    wo = await db.work_orders.find_one({"wo_number": wo_number}, {"_id": 0})
+    if not wo:
+        raise HTTPException(status_code=404, detail="WO tidak ditemukan")
+    sku = wo["product_sku"]
+    progress_docs = await db.operator_progress.find({"wo_number": wo_number}, {"_id": 0}).to_list(2000)
+    # Bundle list (in order) + step counts from work_instructions
+    bundles = await db.product_bundles.find({"product_sku": sku}, {"_id": 0}).sort("urutan", 1).to_list(100)
+    wis = await db.work_instructions.find({"product_sku": sku}, {"_id": 0}).to_list(100)
+    wi_steps = {w["bundle_code"]: len(w.get("steps", [])) for w in wis}
+
+    # Build per-bundle summary
+    progress_by_bundle: dict[str, dict[int, bool]] = {}
+    for p in progress_docs:
+        bc = p["bundle_code"]
+        if p.get("checked"):
+            progress_by_bundle.setdefault(bc, {})[int(p["step_number"])] = True
+
+    summary = []
+    for b in bundles:
+        bc = b["bundle_code"]
+        total = wi_steps.get(bc, 0)
+        checked = sum(1 for v in progress_by_bundle.get(bc, {}).values() if v)
+        # Cap checked at total to be safe if steps were reduced after checks were recorded
+        if total > 0 and checked > total:
+            checked = total
+        summary.append({
+            "bundle_code": bc,
+            "bundle_name": b.get("bundle_name"),
+            "total_steps": total,
+            "checked_steps": checked,
+            "completed": total > 0 and checked >= total,
+        })
+
+    return {
+        "wo_number": wo_number,
+        "items": progress_docs,
+        "summary": summary,
+    }
+
+
+@router.post("/work-orders/{wo_number}/operator-progress")
+async def upsert_operator_progress(
+    wo_number: str,
+    payload: OperatorProgressInput,
+    request: Request,
+    user: dict = Depends(require_roles("Admin", "Production")),
+):
+    db = get_db(request)
+    wo = await db.work_orders.find_one({"wo_number": wo_number}, {"_id": 0})
+    if not wo:
+        raise HTTPException(status_code=404, detail="WO tidak ditemukan")
+    now = now_iso()
+    name = user.get("name") or user.get("username") or "operator"
+    filter_q = {
+        "wo_number": wo_number,
+        "bundle_code": payload.bundle_code,
+        "step_number": payload.step_number,
+    }
+    update = {
+        "$set": {
+            **filter_q,
+            "checked": payload.checked,
+            "checked_by": name if payload.checked else None,
+            "checked_at": now if payload.checked else None,
+        },
+        "$setOnInsert": {"id": gen_id()},
+    }
+    await db.operator_progress.update_one(filter_q, update, upsert=True)
+    doc = await db.operator_progress.find_one(filter_q, {"_id": 0})
+    return doc

@@ -1314,3 +1314,169 @@ class TestP3APhotoClone:
         # Restore V1 if marked Hold
         db.products.update_one({"sku": self.SRC}, {"$unset": {"version_group": "", "parent_sku": "", "source_sku": ""},
                                                    "$set": {"status": "Released"}})
+
+# ============ P3B: Operator Progress ============
+class TestP3BOperatorProgress:
+    """Step-checkbox progress for operator view."""
+
+    wo_number: str = None
+
+    @pytest.fixture(scope="class")
+    def setup_wo(self, prod):
+        # Create WO for V1 (root, no briefing); cleanup any leftover after class
+        r = prod.post(f"{API}/work-orders", json={
+            "product_sku": SRC_SKU, "qty": 2, "reseller": "Operator Test", "prioritas": "Normal",
+        })
+        assert r.status_code == 200, r.text
+        TestP3BOperatorProgress.wo_number = r.json()["wo_number"]
+        # Defensive: purge any leftover progress for this WO number (counter may collide with prior runs)
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        db.operator_progress.delete_many({"wo_number": TestP3BOperatorProgress.wo_number})
+        return TestP3BOperatorProgress.wo_number
+
+    @classmethod
+    def teardown_class(cls):
+        if cls.wo_number:
+            try:
+                s = _sess(ADMIN)
+                s.delete(f"{API}/work-orders/{cls.wo_number}")
+            except Exception:
+                pass
+            import pymongo, os
+            from dotenv import load_dotenv
+            load_dotenv("/app/backend/.env")
+            cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+            db = cli[os.environ.get("DB_NAME", "test_database")]
+            db.operator_progress.delete_many({"wo_number": cls.wo_number})
+
+    def test_initial_get_empty(self, prod, setup_wo):
+        wo = setup_wo
+        r = prod.get(f"{API}/work-orders/{wo}/operator-progress")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["wo_number"] == wo
+        assert d["items"] == []
+        assert d["summary"], "summary should list bundles"
+        # Bundle A in seed has 5 steps
+        a = next(x for x in d["summary"] if x["bundle_code"] == "A")
+        assert a["total_steps"] == 5
+        assert a["checked_steps"] == 0
+        assert a["completed"] is False
+
+    def test_check_step_updates_summary(self, prod, setup_wo):
+        wo = setup_wo
+        r = prod.post(f"{API}/work-orders/{wo}/operator-progress", json={
+            "bundle_code": "A", "step_number": 1, "checked": True,
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["checked"] is True
+        assert d["checked_by"]
+        assert d["checked_at"]
+
+        # GET reflects the change
+        r2 = prod.get(f"{API}/work-orders/{wo}/operator-progress")
+        items = r2.json()["items"]
+        assert len(items) == 1
+        a = next(x for x in r2.json()["summary"] if x["bundle_code"] == "A")
+        assert a["checked_steps"] == 1
+        assert a["completed"] is False
+
+    def test_check_all_steps_marks_completed(self, prod, setup_wo):
+        wo = setup_wo
+        # Check remaining 4 steps of A (already checked 1)
+        for n in [2, 3, 4, 5]:
+            r = prod.post(f"{API}/work-orders/{wo}/operator-progress", json={
+                "bundle_code": "A", "step_number": n, "checked": True,
+            })
+            assert r.status_code == 200
+        # Summary completed
+        r = prod.get(f"{API}/work-orders/{wo}/operator-progress")
+        a = next(x for x in r.json()["summary"] if x["bundle_code"] == "A")
+        assert a["checked_steps"] == 5
+        assert a["completed"] is True
+
+    def test_toggle_uncheck_clears_metadata(self, prod, setup_wo):
+        wo = setup_wo
+        r = prod.post(f"{API}/work-orders/{wo}/operator-progress", json={
+            "bundle_code": "A", "step_number": 1, "checked": False,
+        })
+        assert r.status_code == 200
+        d = r.json()
+        assert d["checked"] is False
+        assert d["checked_by"] is None
+        assert d["checked_at"] is None
+        # Summary reflects decrement
+        r2 = prod.get(f"{API}/work-orders/{wo}/operator-progress")
+        a = next(x for x in r2.json()["summary"] if x["bundle_code"] == "A")
+        assert a["checked_steps"] == 4
+        assert a["completed"] is False
+
+    def test_idempotent_upsert(self, prod, setup_wo):
+        wo = setup_wo
+        # Same step re-set to True twice; only one row should exist
+        for _ in range(2):
+            r = prod.post(f"{API}/work-orders/{wo}/operator-progress", json={
+                "bundle_code": "B", "step_number": 1, "checked": True,
+            })
+            assert r.status_code == 200
+        items = prod.get(f"{API}/work-orders/{wo}/operator-progress").json()["items"]
+        matching = [it for it in items if it["bundle_code"] == "B" and it["step_number"] == 1]
+        assert len(matching) == 1
+
+    def test_qc_can_read(self, qc, setup_wo):
+        wo = setup_wo
+        r = qc.get(f"{API}/work-orders/{wo}/operator-progress")
+        assert r.status_code == 200
+
+    def test_qc_cannot_write(self, qc, setup_wo):
+        wo = setup_wo
+        r = qc.post(f"{API}/work-orders/{wo}/operator-progress", json={
+            "bundle_code": "C", "step_number": 1, "checked": True,
+        })
+        assert r.status_code == 403
+
+    def test_unauthenticated_blocked(self, setup_wo):
+        wo = setup_wo
+        r = requests.get(f"{API}/work-orders/{wo}/operator-progress", timeout=30)
+        assert r.status_code == 401
+        r2 = requests.post(f"{API}/work-orders/{wo}/operator-progress",
+                           json={"bundle_code": "A", "step_number": 1, "checked": True}, timeout=30)
+        assert r2.status_code == 401
+
+    def test_unknown_wo_404(self, admin):
+        r = admin.get(f"{API}/work-orders/WO-NOT-EXIST-OPV/operator-progress")
+        assert r.status_code == 404
+        r2 = admin.post(f"{API}/work-orders/WO-NOT-EXIST-OPV/operator-progress",
+                        json={"bundle_code": "A", "step_number": 1, "checked": True})
+        assert r2.status_code == 404
+
+    def test_progress_isolated_per_wo(self, prod, admin):
+        # Create a 2nd WO and verify progress data does not leak between WOs
+        r = prod.post(f"{API}/work-orders", json={
+            "product_sku": SRC_SKU, "qty": 1, "reseller": "Isolation", "prioritas": "Normal",
+        })
+        assert r.status_code == 200
+        wo2 = r.json()["wo_number"]
+        try:
+            r2 = prod.get(f"{API}/work-orders/{wo2}/operator-progress")
+            assert r2.json()["items"] == [], "fresh WO must start empty"
+            # Setting on wo2 must NOT affect main wo
+            prod.post(f"{API}/work-orders/{wo2}/operator-progress", json={
+                "bundle_code": "A", "step_number": 1, "checked": True,
+            })
+            wo_main_items = prod.get(f"{API}/work-orders/{self.wo_number}/operator-progress").json()["items"]
+            assert all(it["wo_number"] == self.wo_number for it in wo_main_items)
+        finally:
+            admin.delete(f"{API}/work-orders/{wo2}")
+            import pymongo, os
+            from dotenv import load_dotenv
+            load_dotenv("/app/backend/.env")
+            cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+            db = cli[os.environ.get("DB_NAME", "test_database")]
+            db.operator_progress.delete_many({"wo_number": wo2})
+

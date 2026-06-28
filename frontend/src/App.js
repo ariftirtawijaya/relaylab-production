@@ -19,6 +19,8 @@ import CuttingSheetPrint from "@/pages/print/CuttingSheetPrint";
 import BundleLabelsPrint from "@/pages/print/BundleLabelsPrint";
 import QcChecklistPrint from "@/pages/print/QcChecklistPrint";
 import PinMapPrint from "@/pages/print/PinMapPrint";
+import OperatorWorkOrder from "@/pages/operator/OperatorWorkOrder";
+import OperatorBundle from "@/pages/operator/OperatorBundle";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -41,6 +43,8 @@ function App() {
           <Route path="/work-orders/:woNumber/print/bundle-labels" element={<Protected><BundleLabelsPrint /></Protected>} />
           <Route path="/work-orders/:woNumber/print/qc-checklist" element={<Protected><QcChecklistPrint /></Protected>} />
           <Route path="/work-orders/:woNumber/print/pin-map" element={<Protected><PinMapPrint /></Protected>} />
+          <Route path="/operator/work-orders/:woNumber" element={<Protected><OperatorWorkOrder /></Protected>} />
+          <Route path="/operator/work-orders/:woNumber/bundles/:bundleCode" element={<Protected><OperatorBundle /></Protected>} />
           <Route element={<Protected><Layout /></Protected>}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/products" element={<Products />} />

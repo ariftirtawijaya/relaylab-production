@@ -90,6 +90,11 @@ export default function WorkOrderDetail() {
         actions={
           <div className="flex gap-2 flex-wrap">
             <Link to="/work-orders"><Button variant="outline"><ArrowLeft className="w-4 h-4 mr-2" />Kembali</Button></Link>
+            <Link to={`/operator/work-orders/${woNumber}`}>
+              <Button variant="outline" className="bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100" data-testid="wo-open-operator-mode">
+                Mode Operator
+              </Button>
+            </Link>
             {canEdit && (
               <Select value={wo.status} onValueChange={setStatus}>
                 <SelectTrigger className="w-48" data-testid="wo-status-select"><SelectValue /></SelectTrigger>
