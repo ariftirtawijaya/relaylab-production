@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
 import { fmtDate } from "@/lib/utils-app";
-import ProductionBriefing from "@/components/ProductionBriefing";
+import ProductionBriefing, { ChangedBadge, cableChangeKind } from "@/components/ProductionBriefing";
 
 export default function CuttingSheetPrint() {
   const { woNumber } = useParams();
@@ -60,9 +60,16 @@ export default function CuttingSheetPrint() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.cable_code} className={r.substitusi ? "bg-amber-50" : ""}>
-              <td className="border border-black p-2 font-mono font-semibold">{r.cable_code}</td>
+          {rows.map((r) => {
+            const ck = cableChangeKind(wo.briefing, r.cable_code);
+            return (
+            <tr key={r.cable_code} data-testid={`cs-row-${r.cable_code}`} className={`${r.substitusi ? "bg-amber-50" : ""} ${ck ? "border-l-4 border-l-amber-500" : ""}`}>
+              <td className="border border-black p-2 font-mono font-semibold">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span>{r.cable_code}</span>
+                  {ck && <ChangedBadge kind={ck} />}
+                </div>
+              </td>
               <td className="border border-black p-2">{r.nama_fungsi}</td>
               <td className="border border-black p-2 font-mono text-center">{r.ukuran_kabel}</td>
               <td className="border border-black p-2 font-mono text-center">{r.panjang_cm} cm</td>
@@ -76,7 +83,7 @@ export default function CuttingSheetPrint() {
               <td className="border border-black p-2 font-mono text-center">{r.nomor_program || "-"}</td>
               <td className="border border-black p-2 font-mono text-center">{r.bundle_code}</td>
             </tr>
-          ))}
+          );})}
         </tbody>
       </table>
 

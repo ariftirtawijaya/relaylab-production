@@ -253,14 +253,20 @@ export default function WorkOrderDetail() {
   );
 }
 
-function CuttingRow({ row, onSet, canEdit }) {
+function CuttingRow({ row, onSet, canEdit, briefing }) {
   const [val, setVal] = useState(row.warna_aktual || "");
   const [reason, setReason] = useState(row.alasan_substitusi || "");
   const needsReason = row.warna_wajib && row.warna_default && val && val.toLowerCase() !== (row.warna_default || "").toLowerCase();
   const substitute = row.substitusi;
+  const changeKind = cableChangeKind(briefing, row.cable_code);
   return (
-    <TableRow data-testid={`cs-row-${row.cable_code}`} className={substitute ? "bg-amber-50" : ""}>
-      <TableCell className="font-mono font-semibold">{row.cable_code}</TableCell>
+    <TableRow data-testid={`cs-row-${row.cable_code}`} className={`${substitute ? "bg-amber-50" : ""} ${changeKind ? "border-l-4 border-l-amber-400" : ""}`}>
+      <TableCell className="font-mono font-semibold">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span>{row.cable_code}</span>
+          {changeKind && <ChangedBadge kind={changeKind} />}
+        </div>
+      </TableCell>
       <TableCell>
         <div>{row.nama_fungsi}</div>
         {row.warna_wajib && <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs mt-0.5">Warna Wajib</Badge>}
