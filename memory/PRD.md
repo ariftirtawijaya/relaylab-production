@@ -65,6 +65,15 @@ mandatory-color cables like power/ground).
 - Backend tests: 61/61 (10 new P2B tests including self-compare, 404, all sections, role access)
 - Rename: app renamed from "Production OS" to "Production System" (browser title, sidebar, login, print views, docstrings, PRD)
 
+## Phase P2C (v1.4, Feb 2026) — Auto-Generated Production Briefing on Work Orders
+- New helper `_build_briefing_from_diff()` condenses compare-diff into Bahasa Indonesia briefing snapshot: `summary_text`, `important_changes[]`, `compared_to_sku`, `compare_url`, `changed_sections[]`, plus row-key arrays (`changed_recipe_codes`, `removed_recipe_codes`, `added_recipe_codes`, `changed_bundle_codes`, `changed_wi_bundles`, `changed_pin_relays`, `changed_qc_items`).
+- `POST /api/work-orders` auto-attaches briefing if product has `parent_sku` or `source_sku`; snapshot is denormalized into the WO doc so later product edits don't retroactively alter past WOs.
+- `POST /api/work-orders/{wo}/regenerate-briefing` (Admin/Production) rebuilds the briefing from current product state.
+- Frontend component `/app/frontend/src/components/ProductionBriefing.jsx` exports `<ProductionBriefing>` (full + compact), `<ChangedBadge>`, `cableChangeKind`, `bundleChangeKind`.
+- Briefing card surfaces on: `WorkOrderDetail` (full), `BundleDetail` (compact + bundle-level notice), `print/CuttingSheetPrint` (full); row-level `Berubah/Baru/Dihapus` badges on cutting-sheet rows (screen + print), bundle cards, bundle-labels print, and BundleDetail cable list.
+- Backend tests: 69/69 (8 new TestP2CBriefing tests: cloned-WO attach, root-WO no briefing, GET returns briefing, regenerate after mutation, regenerate root returns none, QC role 403, 404, cleanup).
+- Frontend E2E: 100% via testing_agent (iteration_7).
+
 ## Backlog (P1)
 - Foto upload for bundles/instructions/mistakes (object storage)
 - Edit UI for product recipe/bundles/work-instructions/pin-map (currently CRUD by JSON; structure is editable but UI forms not yet built)
