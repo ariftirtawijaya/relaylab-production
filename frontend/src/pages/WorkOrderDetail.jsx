@@ -158,9 +158,22 @@ export default function WorkOrderDetail() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
-                  <CuttingRow key={r.cable_code} row={r} onSet={setBatchColor} canEdit={canEdit} briefing={wo.briefing} />
-                ))}
+                {rows.map((r, idx) => {
+                  const prev = idx > 0 ? rows[idx - 1] : null;
+                  const newUkuran = !!prev && prev.ukuran_kabel !== r.ukuran_kabel;
+                  return (
+                    <React.Fragment key={r.cable_code}>
+                      {newUkuran && (
+                        <TableRow className="bg-slate-100 hover:bg-slate-100">
+                          <TableCell colSpan={10} className="py-1 text-xs text-slate-600 font-semibold uppercase tracking-wide">
+                            ── ukuran {r.ukuran_kabel} ──
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      <CuttingRow row={r} prev={prev} onSet={setBatchColor} canEdit={canEdit} briefing={wo.briefing} />
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </Section>
@@ -259,12 +272,14 @@ export default function WorkOrderDetail() {
   );
 }
 
-function CuttingRow({ row, onSet, canEdit, briefing }) {
+function CuttingRow({ row, prev, onSet, canEdit, briefing }) {
   const [val, setVal] = useState(row.warna_aktual || "");
   const [reason, setReason] = useState(row.alasan_substitusi || "");
   const needsReason = row.warna_wajib && row.warna_default && val && val.toLowerCase() !== (row.warna_default || "").toLowerCase();
   const substitute = row.substitusi;
   const changeKind = cableChangeKind(briefing, row.cable_code);
+  const sameUkuranAsPrev = prev && prev.ukuran_kabel === row.ukuran_kabel;
+  const sameWarnaAsPrev = prev && (prev.warna_aktual || "").toLowerCase() === (row.warna_aktual || "").toLowerCase();
   return (
     <TableRow data-testid={`cs-row-${row.cable_code}`} className={`${substitute ? "bg-amber-50" : ""} ${changeKind ? "border-l-4 border-l-amber-400" : ""}`}>
       <TableCell className="font-mono font-semibold">
@@ -277,12 +292,12 @@ function CuttingRow({ row, onSet, canEdit, briefing }) {
         <div>{row.nama_fungsi}</div>
         {row.warna_wajib && <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs mt-0.5">Warna Wajib</Badge>}
       </TableCell>
-      <TableCell className="mono">{row.ukuran_kabel}</TableCell>
+      <TableCell className={`mono ${sameUkuranAsPrev ? "text-slate-400" : "font-bold"}`}>{row.ukuran_kabel}</TableCell>
       <TableCell className="mono">{row.panjang_cm} cm</TableCell>
       <TableCell className="text-right mono">{row.qty_per_pcs}</TableCell>
       <TableCell className="text-right mono font-semibold">{row.total_qty}</TableCell>
       <TableCell>{row.warna_default || "-"}</TableCell>
-      <TableCell>
+      <TableCell className={!sameWarnaAsPrev ? "font-semibold" : ""}>
         {canEdit ? (
           <div className="flex flex-col gap-1 min-w-[180px]">
             <Input data-testid={`cs-color-${row.cable_code}`} placeholder={row.warna_default} value={val} onChange={(e) => setVal(e.target.value)} className="h-8 text-sm" />

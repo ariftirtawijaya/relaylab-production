@@ -44,6 +44,10 @@ export default function CuttingSheetPrint() {
 
       <ProductionBriefing briefing={wo.briefing} sku={wo.product_sku} />
 
+      <div className="text-xs text-slate-600 italic mb-2 no-print-text-only">
+        Urutan baris: <strong>ukuran kabel</strong> → <strong>warna aktual</strong> → cable code. Potong batch per kelompok untuk efisiensi.
+      </div>
+
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="bg-slate-100">
@@ -60,30 +64,39 @@ export default function CuttingSheetPrint() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {rows.map((r, idx) => {
             const ck = cableChangeKind(wo.briefing, r.cable_code);
+            const prev = idx > 0 ? rows[idx - 1] : null;
+            const newUkuran = !prev || prev.ukuran_kabel !== r.ukuran_kabel;
+            const newWarna = !prev || (prev.warna_aktual || "").toLowerCase() !== (r.warna_aktual || "").toLowerCase();
             return (
-            <tr key={r.cable_code} data-testid={`cs-row-${r.cable_code}`} className={`${r.substitusi ? "bg-amber-50" : ""} ${ck ? "border-l-4 border-l-amber-500" : ""}`}>
-              <td className="border border-black p-2 font-mono font-semibold">
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span>{r.cable_code}</span>
-                  {ck && <ChangedBadge kind={ck} />}
-                </div>
-              </td>
-              <td className="border border-black p-2">{r.nama_fungsi}</td>
-              <td className="border border-black p-2 font-mono text-center">{r.ukuran_kabel}</td>
-              <td className="border border-black p-2 font-mono text-center">{r.panjang_cm} cm</td>
-              <td className="border border-black p-2 text-center font-mono">{r.qty_per_pcs}</td>
-              <td className="border border-black p-2 text-center font-mono font-bold">{r.total_qty}</td>
-              <td className="border border-black p-2">{r.warna_default || "-"}</td>
-              <td className="border border-black p-2">
-                {r.warna_aktual}
-                {r.substitusi && <div className="text-xs italic">substitusi</div>}
-              </td>
-              <td className="border border-black p-2 font-mono text-center">{r.nomor_program || "-"}</td>
-              <td className="border border-black p-2 font-mono text-center">{r.bundle_code}</td>
-            </tr>
-          );})}
+              <React.Fragment key={r.cable_code}>
+                {newUkuran && idx > 0 && (
+                  <tr className="cs-group-sep"><td colSpan={10} className="border-t-2 border-black h-0 p-0"></td></tr>
+                )}
+                <tr data-testid={`cs-row-${r.cable_code}`} className={`${r.substitusi ? "bg-amber-50" : ""} ${ck ? "border-l-4 border-l-amber-500" : ""}`}>
+                  <td className="border border-black p-2 font-mono font-semibold">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span>{r.cable_code}</span>
+                      {ck && <ChangedBadge kind={ck} />}
+                    </div>
+                  </td>
+                  <td className="border border-black p-2">{r.nama_fungsi}</td>
+                  <td className={`border border-black p-2 font-mono text-center ${newUkuran ? "font-bold" : "text-slate-500"}`}>{r.ukuran_kabel}</td>
+                  <td className="border border-black p-2 font-mono text-center">{r.panjang_cm} cm</td>
+                  <td className="border border-black p-2 text-center font-mono">{r.qty_per_pcs}</td>
+                  <td className="border border-black p-2 text-center font-mono font-bold">{r.total_qty}</td>
+                  <td className="border border-black p-2">{r.warna_default || "-"}</td>
+                  <td className={`border border-black p-2 ${newWarna ? "font-bold" : ""}`}>
+                    {r.warna_aktual}
+                    {r.substitusi && <div className="text-xs italic">substitusi</div>}
+                  </td>
+                  <td className="border border-black p-2 font-mono text-center">{r.nomor_program || "-"}</td>
+                  <td className="border border-black p-2 font-mono text-center">{r.bundle_code}</td>
+                </tr>
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
 

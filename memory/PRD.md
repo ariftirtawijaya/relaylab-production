@@ -145,6 +145,16 @@ mandatory-color cables like power/ground).
 - `/app/frontend/src/pages/print/*` — Print-friendly pages
 - `/app/frontend/src/pages/operator/*` — Fullscreen dark Operator View (Phase P3B)
 
+## Phase P3C (v1.8, Feb 2026) — Cutting Sheet Sort untuk Efisiensi Potong Kabel
+- Backend `GET /api/work-orders/{wo}/cutting-sheet` rows sekarang di-sort:
+  1. **Ukuran kabel** (natural-numeric: `0.5mm < 0.85mm < 1.5mm < 2mm`) — operator tidak ganti program mesin
+  2. **Warna aktual** (case-insensitive, fallback ke warna_default) — minim ganti spool dalam satu ukuran
+  3. **Cable code** — stable tiebreaker
+- Sort otomatis ter-reflow saat operator input substitusi warna via `POST /batch-colors` (warna_aktual berubah → posisi berubah).
+- Frontend WorkOrderDetail Cutting tab: separator row `── ukuran X.Xmm ──` antar grup ukuran; ukuran/warna di-bold ketika berbeda dari baris sebelumnya (sisanya abu-abu).
+- Frontend CuttingSheetPrint: separator border tebal antar ukuran, ukuran/warna bold pada baris pertama tiap grup, header hint "Urutan baris: ukuran → warna → cable code".
+- Backend tests: 110/110 GREEN (4 new TestCuttingSheetSort: ukuran ascending, within-ukuran warna order, within-warna code order, substitusi reflow).
+
 ## Phase P3B (v1.7, Feb 2026) — Operator View untuk Tablet/Desktop Produksi
 - Two new browser routes (no Layout wrapper, dark fullscreen):
   - `/operator/work-orders/:woNumber` — WO summary + bundle cards w/ progress badges

@@ -1480,3 +1480,91 @@ class TestP3BOperatorProgress:
             db = cli[os.environ.get("DB_NAME", "test_database")]
             db.operator_progress.delete_many({"wo_number": wo2})
 
+
+# ============ Cutting Sheet Sort (P3C) ============
+class TestCuttingSheetSort:
+    """Cutting sheet rows must be ordered by ukuran -> warna -> cable_code."""
+
+    wo_number: str = None
+
+    @pytest.fixture(scope="class")
+    def setup_wo(self, prod):
+        r = prod.post(f"{API}/work-orders", json={
+            "product_sku": SRC_SKU, "qty": 2, "reseller": "Sort Test", "prioritas": "Normal",
+        })
+        assert r.status_code == 200, r.text
+        TestCuttingSheetSort.wo_number = r.json()["wo_number"]
+        return TestCuttingSheetSort.wo_number
+
+    @classmethod
+    def teardown_class(cls):
+        if cls.wo_number:
+            try:
+                s = _sess(ADMIN)
+                s.delete(f"{API}/work-orders/{cls.wo_number}")
+            except Exception:
+                pass
+            import pymongo, os
+            from dotenv import load_dotenv
+            load_dotenv("/app/backend/.env")
+            cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+            db = cli[os.environ.get("DB_NAME", "test_database")]
+            db.batch_colors.delete_many({"wo_number": cls.wo_number})
+
+    @staticmethod
+    def _ukuran_num(s):
+        import re as _re
+        if not s:
+            return float("inf")
+        m = _re.search(r"\d+(?:[\.,]\d+)?", str(s))
+        return float(m.group(0).replace(",", ".")) if m else float("inf")
+
+    def test_rows_sorted_by_ukuran_asc(self, prod, setup_wo):
+        wo = setup_wo
+        r = prod.get(f"{API}/work-orders/{wo}/cutting-sheet")
+        assert r.status_code == 200
+        rows = r.json()["rows"]
+        assert rows, "must have rows"
+        nums = [self._ukuran_num(r["ukuran_kabel"]) for r in rows]
+        assert nums == sorted(nums), f"ukuran not monotonic ascending: {nums}"
+
+    def test_within_ukuran_sorted_by_warna(self, prod, setup_wo):
+        wo = setup_wo
+        rows = prod.get(f"{API}/work-orders/{wo}/cutting-sheet").json()["rows"]
+        # Group by ukuran and check warna order within each group
+        groups: dict = {}
+        for r in rows:
+            groups.setdefault(r["ukuran_kabel"], []).append((r["warna_aktual"] or "").lower())
+        for uk, warnas in groups.items():
+            assert warnas == sorted(warnas), f"within ukuran '{uk}' warna not sorted: {warnas}"
+
+    def test_within_warna_sorted_by_cable_code(self, prod, setup_wo):
+        wo = setup_wo
+        rows = prod.get(f"{API}/work-orders/{wo}/cutting-sheet").json()["rows"]
+        groups: dict = {}
+        for r in rows:
+            key = (r["ukuran_kabel"], (r["warna_aktual"] or "").lower())
+            groups.setdefault(key, []).append(r["cable_code"])
+        for k, codes in groups.items():
+            assert codes == sorted(codes), f"in {k} cable_code not sorted: {codes}"
+
+    def test_batch_color_substitution_affects_sort(self, prod, setup_wo):
+        """Setting a substitusi color should reflow the sort order based on warna_aktual."""
+        wo = setup_wo
+        # find a 0.5mm cable that's normally one color; substitute it to a different color
+        rows = prod.get(f"{API}/work-orders/{wo}/cutting-sheet").json()["rows"]
+        target = next((r for r in rows if str(r["ukuran_kabel"]).startswith("0.5") and not r["warna_wajib"]), None)
+        if not target:
+            pytest.skip("no non-mandatory 0.5mm cable to test substitution sort")
+        # Substitute to "Zebra" (lexicographically last, no alasan needed because not warna_wajib)
+        r = prod.post(f"{API}/work-orders/{wo}/batch-colors", json={
+            "cable_code": target["cable_code"], "warna_aktual": "Zebra",
+        })
+        assert r.status_code == 200, r.text
+        # Re-fetch and verify the substituted cable moved within its ukuran group
+        rows2 = prod.get(f"{API}/work-orders/{wo}/cutting-sheet").json()["rows"]
+        size05 = [r for r in rows2 if str(r["ukuran_kabel"]).startswith("0.5")]
+        # The substituted one must now be at the LAST position in the 0.5mm group
+        assert size05[-1]["cable_code"] == target["cable_code"], \
+            f"after substituting to 'Zebra', cable should sort last in its ukuran group; got {[r['cable_code'] for r in size05]}"
+

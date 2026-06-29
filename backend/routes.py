@@ -1099,6 +1099,30 @@ async def get_cutting_sheet(wo_number: str, request: Request, _: dict = Depends(
             "nomor_program": mp_by_code.get(c["cable_code"]),
             "bundle_code": c["bundle_code"],
         })
+
+    # Sort untuk efisiensi operator potong kabel:
+    # 1) ukuran kabel (natural-numeric: "0.5" < "1.0" < "2.5") -- operator tidak ganti program mesin
+    # 2) warna aktual (case-insensitive) -- minim ganti spool warna dalam 1 ukuran
+    # 3) cable_code -- stable tiebreaker
+    def _ukuran_key(val):
+        # Extract first numeric token: "0.5mm" -> 0.5, "2.5 mm" -> 2.5, "1 mm" -> 1.0
+        if not val:
+            return (1, 0.0, "")
+        s = str(val)
+        m = re.search(r"\d+(?:[\.,]\d+)?", s)
+        if not m:
+            return (1, 0.0, s.lower())  # non-numeric ukurans go to the end
+        try:
+            num = float(m.group(0).replace(",", "."))
+        except ValueError:
+            num = 0.0
+        return (0, num, s.lower())
+
+    rows.sort(key=lambda r: (
+        _ukuran_key(r.get("ukuran_kabel")),
+        (r.get("warna_aktual") or "").lower(),
+        r.get("cable_code") or "",
+    ))
     return {"wo": wo, "product": product, "rows": rows}
 
 
