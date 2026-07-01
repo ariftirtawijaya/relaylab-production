@@ -1,0 +1,40 @@
+{
+  "summary": "Round-2 bug-fix verification for the {\"detail\":\"Belum login\"} issue caused by emergent-main.js monkey-patching XHR. Verified: (a) hostname gate script in /app/frontend/public/index.html correctly sets window.__RELAYLAB_IS_EMERGENT__ and gates emergent-main.js, PostHog init, and badge on Emergent-owned domains only; (b) all 10 hostname regex cases correct (both TRUE and FALSE branches, no naive substring bug); (c) Emergent-domain preview URL still fully works — flag=true, script injected, login OK, rl_session cookie present, /api/auth/me=200, Dashboard renders real data, hard reload preserves session; (d) simulated self-hosted (fresh context + init script + MutationObserver script-removal) — withCredentials preserved on XHR, POST /api/auth/login=200, rl_session cookie set, /api/auth/me=200, Dashboard reachable after reload; (e) backend curl login sets rl_session WITHOUT Secure flag as expected (COOKIE_SECURE default false); (f) full pytest suite 110/110 GREEN in 20s; (g) README_DEPLOY_WINDOWS.md now documents Feb-2026 change gating telemetry scripts to Emergent domains only.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verification_matrix": {
+    "T1_emergent_domain_flag_and_script": "PASS — window.__RELAYLAB_IS_EMERGENT__=true; exactly one <script src*='emergent-main.js'> present in DOM (dynamically inserted by inline loader).",
+    "T2_emergent_domain_login_flow": "PASS — arif/admin123 login redirected off /login; rl_session cookie in context.cookies(); /api/auth/me returns 200 with Arif Admin JSON; Dashboard shows real stats (1 WO Aktif, WO-20260629-001 Menunggu Cutting); page.reload() preserves session.",
+    "T3_simulated_self_hosted": "PASS — new Playwright context with add_init_script + MutationObserver strips any injected emergent-main.js. XHR.withCredentials=true preserved. fetch('/api/auth/login')=200. context.cookies() contains rl_session. fetch('/api/auth/me')=200. goto('/') keeps auth. reload() keeps auth. NOTE: Since Playwright cannot change actual location.hostname, the loader's flag inside the real page still resolves to true; the simulation validates behavior when emergent-main.js is neutralized, which matches the self-hosted scenario.",
+    "T4_static_source_inspection_index_html": "PASS — /app/frontend/public/index.html:\n  (a) NO bare <script src='https://assets.emergent.sh/scripts/emergent-main.js'>; it is created via document.createElement inside `if (isEmergent) { ... document.head.appendChild(s); }` (lines 34-51).\n  (b) posthog.init(...) is inside `if (window.__RELAYLAB_IS_EMERGENT__) { ... }` guard (lines 116-186).\n  (c) Badge-hiding script at end of <body> (lines 188-194) sets #emergent-badge display=none when flag is false.\n  (d) All 4 inline scripts parse as valid JS (no console errors during load).",
+    "T5_hostname_regex_correctness": "PASS — /tmp/hostname_check.js verified all 10 cases:\n  wo-manager.preview.emergentagent.com=TRUE, something.emergent.sh=TRUE, emergentagent.com=TRUE, emergent.sh=TRUE, relaylab-production=FALSE, localhost=FALSE, 192.168.1.100=FALSE, docker-host.local=FALSE, evil-emergent.sh.attacker.com=FALSE, myemergent.sh=FALSE. No substring/suffix false-positive bug — the implementation uses endsWith('.emergent.sh') / endsWith('.emergentagent.com') with the leading dot plus exact-match branches.",
+    "T6_backend_curl_cookie": "PASS — POST /api/auth/login as arif returns 200 with `set-cookie: rl_session=<uuid>; HttpOnly; Max-Age=2592000; Path=/; SameSite=lax` (no Secure). curl -b jar to /api/auth/me returns 200 with Arif user JSON.",
+    "T7_backend_pytest_regression": "PASS — 110 passed, 0 failed in 20.34s (tests/test_relaylab_backend.py, -n 0).",
+    "T8_readme_updated": "PASS — /app/README_DEPLOY_WINDOWS.md line 211: paragraph 'Sejak versi Feb 2026 ... emergent-main.js + PostHog analytics + badge ... hanya di-load kalau aplikasi dibuka via domain *.emergent.sh / *.emergentagent.com. Di deployment self-hosted (Docker, LAN, custom hostname), script tersebut TIDAK dimuat sama sekali — ini menghilangkan monkey-patch XMLHttpRequest yang bikin cookie hilang di deployment lokal.'"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_relaylab_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/tmp/hostname_check.js"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Positive: hostname gate is implemented correctly (endsWith with leading dot) and does not fall to any of the tested attack strings (evil-emergent.sh.attacker.com, myemergent.sh).",
+    "Positive: dynamic script insertion is inside try/catch, so even if window/location is unusual, the app boot won't be blocked.",
+    "Minor: index.html hides the badge purely with `display:none` at the bottom of <body> — the badge briefly renders before the script executes on slow devices (flash of Emergent-badge). Could be pre-hidden via inline `style='display:none'` and un-hidden only when flag is true. Not blocking.",
+    "Minor: PostHog stub (`window.posthog = e` and array init) still executes globally BEFORE the isEmergent guard because the IIFE assigns e/window.posthog inside the outer `!(function(t,e){})` call. Re-reading current code: the entire `!(function... )(document, window.posthog || [])` invocation is wrapped inside the `if (window.__RELAYLAB_IS_EMERGENT__) { ... }` block, so the stub is NOT created on self-hosted — good.",
+    "Minor (pre-existing, non-blocking): routes.py > 700 lines; yarn.lock committed contradicting Dockerfile comment. Both flagged in iteration_11."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "arif/admin123 (Admin) — used for all flows; other seeded accounts left untouched.",
+  "seed_data_creation": "None; used pre-seeded WO-20260629-001.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Fix is client-side only (index.html). All 4 inline scripts and hostname gate verified. Backend behavior unchanged from iteration_11 (COOKIE_SECURE env-gated, default false). If user still reports the bug on http://relaylab-production, ask them to (1) hard-refresh browser after `docker compose up -d --build`, (2) fully clear cookies for that origin, and (3) confirm the injected emergent-main.js is NOT present in Network tab (should return zero requests to assets.emergent.sh). If it IS present, the served index.html is stale and Nginx needs rebuild — this is a deploy-cache issue, not a code issue.",
+  "rca of the issue": "Root cause: assets.emergent.sh/scripts/emergent-main.js (loaded unconditionally from index.html) monkey-patches XMLHttpRequest.prototype.send for platform telemetry. Its patch does not preserve `xhr.withCredentials=true` semantics on non-Emergent origins, so the browser stops sending the rl_session cookie on subsequent API requests, and every authenticated endpoint returns 401 {\"detail\":\"Belum login\"} — even though the cookie is set correctly and COOKIE_SECURE is properly false. Fix: gate the entire Emergent-telemetry stack (emergent-main.js script tag, PostHog init, and 'Made with Emergent' badge) behind a hostname check that is TRUE only for exact/subdomain matches of emergent.sh and emergentagent.com. Verification path: (a) preview URL still loads the script and works (Emergent side unaffected), (b) any custom hostname (relaylab-production, LAN IP, localhost, Docker host) will see the flag=false and never load emergent-main.js, so XHR remains unpatched and cookies flow normally. This is a client-only change; backend was already correct after iteration_11."
+}

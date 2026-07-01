@@ -208,6 +208,8 @@ docker compose restart backend
 ```
 Bersihkan cookie di browser (F12 → Application → Cookies → hapus `rl_session`), login ulang.
 
+> **Catatan:** Sejak versi Feb 2026, script telemetry Emergent (`emergent-main.js` + PostHog analytics + badge "Made with Emergent") hanya di-load kalau aplikasi dibuka via domain `*.emergent.sh` / `*.emergentagent.com`. Di deployment self-hosted (Docker, LAN, custom hostname), script tersebut TIDAK dimuat sama sekali — ini menghilangkan monkey-patch `XMLHttpRequest` yang bikin cookie hilang di deployment lokal, dan sekaligus menutup jalur analytics ke server eksternal (privasi workshop internal aman).
+
 ### "Upload foto gagal"
 - Cek `.env` Anda — `EMERGENT_LLM_KEY` sudah benar?
 - Cek log backend: `docker compose logs backend | findstr storage`

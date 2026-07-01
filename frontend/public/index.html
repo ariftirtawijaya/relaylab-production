@@ -23,7 +23,32 @@
         -->
         <title>RelayLab Production System</title>
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
-        <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
+        <!--
+            Emergent platform scripts (network monitor + PostHog analytics + badge).
+            These are ONLY loaded when running under an Emergent-owned domain.
+            On self-hosted deployments (Docker, LAN, custom hostnames like
+            http://relaylab-production) they are NOT loaded, because emergent-main.js
+            monkey-patches XMLHttpRequest.send in a way that strips withCredentials,
+            which breaks session-cookie auth on any non-Emergent origin.
+        -->
+        <script>
+            (function () {
+                try {
+                    var h = window.location.hostname || "";
+                    var isEmergent =
+                        h.endsWith(".emergent.sh") ||
+                        h.endsWith(".emergentagent.com") ||
+                        h === "emergent.sh" ||
+                        h === "emergentagent.com";
+                    window.__RELAYLAB_IS_EMERGENT__ = !!isEmergent;
+                    if (!isEmergent) return;
+                    var s = document.createElement("script");
+                    s.src = "https://assets.emergent.sh/scripts/emergent-main.js";
+                    s.async = false;
+                    document.head.appendChild(s);
+                } catch (_) {}
+            })();
+        </script>
     </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -40,6 +65,7 @@
     -->
         <a
             id="emergent-badge"
+            data-emergent-only="true"
             target="_blank"
             href="https://app.emergent.sh/?utm_source=emergent-badge"
             style="
@@ -84,6 +110,10 @@
             </p>
         </a>
         <script>
+            // Load PostHog analytics only when running on Emergent-owned domains.
+            // On self-hosted / Docker deployments (internal workshop), analytics is disabled
+            // for privacy and to avoid any XHR patching that interferes with session cookies.
+            if (window.__RELAYLAB_IS_EMERGENT__) {
             !(function (t, e) {
                 var o, n, p, r;
                 e.__SV ||
@@ -153,6 +183,14 @@
                     capturePerformance: false,
                 },
             });
+            } // end __RELAYLAB_IS_EMERGENT__ guard
+        </script>
+        <script>
+            // Hide the Emergent badge on self-hosted deployments.
+            if (!window.__RELAYLAB_IS_EMERGENT__) {
+                var b = document.getElementById("emergent-badge");
+                if (b) b.style.display = "none";
+            }
         </script>
     </body>
 </html>
