@@ -51,16 +51,16 @@ export default function CuttingSheetPrint() {
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="bg-slate-100">
-            <th className="border border-black p-2 text-left">Cable Code</th>
-            <th className="border border-black p-2 text-left">Fungsi</th>
+            <th className="border border-black p-2">Warna Default</th>
+            <th className="border border-black p-2">Warna Aktual</th>
             <th className="border border-black p-2">Ukuran</th>
             <th className="border border-black p-2">Panjang</th>
             <th className="border border-black p-2">Qty/pcs</th>
             <th className="border border-black p-2">Total</th>
-            <th className="border border-black p-2">Warna Default</th>
-            <th className="border border-black p-2">Warna Aktual</th>
             <th className="border border-black p-2">Program</th>
             <th className="border border-black p-2">Bundle</th>
+            <th className="border border-black p-2 text-left">Cable Code</th>
+            <th className="border border-black p-2 text-left">Fungsi</th>
           </tr>
         </thead>
         <tbody>
@@ -75,6 +75,17 @@ export default function CuttingSheetPrint() {
                   <tr className="cs-group-sep"><td colSpan={10} className="border-t-2 border-black h-0 p-0"></td></tr>
                 )}
                 <tr data-testid={`cs-row-${r.cable_code}`} className={`${r.substitusi ? "bg-amber-50" : ""} ${ck ? "border-l-4 border-l-amber-500" : ""}`}>
+                  <td className="border border-black p-2">{r.warna_default || "-"}</td>
+                  <td className={`border border-black p-2 ${newWarna ? "font-bold" : ""}`}>
+                    {r.warna_aktual}
+                    {r.substitusi && <div className="text-xs italic">substitusi</div>}
+                  </td>
+                  <td className={`border border-black p-2 font-mono text-center ${newUkuran ? "font-bold" : "text-slate-500"}`}>{r.ukuran_kabel}</td>
+                  <td className="border border-black p-2 font-mono text-center">{r.panjang_cm} cm</td>
+                  <td className="border border-black p-2 text-center font-mono">{r.qty_per_pcs}</td>
+                  <td className="border border-black p-2 text-center font-mono font-bold">{r.total_qty}</td>
+                  <td className="border border-black p-2 font-mono text-center">{r.nomor_program || "-"}</td>
+                  <td className="border border-black p-2 font-mono text-center">{r.bundle_code}</td>
                   <td className="border border-black p-2 font-mono font-semibold">
                     <div className="flex items-center gap-1 flex-wrap">
                       <span>{r.cable_code}</span>
@@ -82,17 +93,6 @@ export default function CuttingSheetPrint() {
                     </div>
                   </td>
                   <td className="border border-black p-2">{r.nama_fungsi}</td>
-                  <td className={`border border-black p-2 font-mono text-center ${newUkuran ? "font-bold" : "text-slate-500"}`}>{r.ukuran_kabel}</td>
-                  <td className="border border-black p-2 font-mono text-center">{r.panjang_cm} cm</td>
-                  <td className="border border-black p-2 text-center font-mono">{r.qty_per_pcs}</td>
-                  <td className="border border-black p-2 text-center font-mono font-bold">{r.total_qty}</td>
-                  <td className="border border-black p-2">{r.warna_default || "-"}</td>
-                  <td className={`border border-black p-2 ${newWarna ? "font-bold" : ""}`}>
-                    {r.warna_aktual}
-                    {r.substitusi && <div className="text-xs italic">substitusi</div>}
-                  </td>
-                  <td className="border border-black p-2 font-mono text-center">{r.nomor_program || "-"}</td>
-                  <td className="border border-black p-2 font-mono text-center">{r.bundle_code}</td>
                 </tr>
               </React.Fragment>
             );

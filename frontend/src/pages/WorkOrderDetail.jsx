@@ -145,16 +145,16 @@ export default function WorkOrderDetail() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Cable Code</TableHead>
-                  <TableHead>Fungsi</TableHead>
+                  <TableHead>Warna Default</TableHead>
+                  <TableHead>Warna Aktual</TableHead>
                   <TableHead>Ukuran</TableHead>
                   <TableHead>Panjang</TableHead>
                   <TableHead className="text-right">Qty/pcs</TableHead>
                   <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Warna Default</TableHead>
-                  <TableHead>Warna Aktual</TableHead>
                   <TableHead>Program</TableHead>
                   <TableHead>Bundle</TableHead>
+                  <TableHead>Cable Code</TableHead>
+                  <TableHead>Fungsi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -282,20 +282,6 @@ function CuttingRow({ row, prev, onSet, canEdit, briefing }) {
   const sameWarnaAsPrev = prev && (prev.warna_aktual || "").toLowerCase() === (row.warna_aktual || "").toLowerCase();
   return (
     <TableRow data-testid={`cs-row-${row.cable_code}`} className={`${substitute ? "bg-amber-50" : ""} ${changeKind ? "border-l-4 border-l-amber-400" : ""}`}>
-      <TableCell className="font-mono font-semibold">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span>{row.cable_code}</span>
-          {changeKind && <ChangedBadge kind={changeKind} />}
-        </div>
-      </TableCell>
-      <TableCell>
-        <div>{row.nama_fungsi}</div>
-        {row.warna_wajib && <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs mt-0.5">Warna Wajib</Badge>}
-      </TableCell>
-      <TableCell className={`mono ${sameUkuranAsPrev ? "text-slate-400" : "font-bold"}`}>{row.ukuran_kabel}</TableCell>
-      <TableCell className="mono">{row.panjang_cm} cm</TableCell>
-      <TableCell className="text-right mono">{row.qty_per_pcs}</TableCell>
-      <TableCell className="text-right mono font-semibold">{row.total_qty}</TableCell>
       <TableCell>{row.warna_default || "-"}</TableCell>
       <TableCell className={!sameWarnaAsPrev ? "font-semibold" : ""}>
         {canEdit ? (
@@ -314,8 +300,22 @@ function CuttingRow({ row, prev, onSet, canEdit, briefing }) {
           </div>
         )}
       </TableCell>
+      <TableCell className={`mono ${sameUkuranAsPrev ? "text-slate-400" : "font-bold"}`}>{row.ukuran_kabel}</TableCell>
+      <TableCell className="mono">{row.panjang_cm} cm</TableCell>
+      <TableCell className="text-right mono">{row.qty_per_pcs}</TableCell>
+      <TableCell className="text-right mono font-semibold">{row.total_qty}</TableCell>
       <TableCell className="font-mono">{row.nomor_program || "-"}</TableCell>
       <TableCell><Badge variant="outline" className="font-mono">{row.bundle_code}</Badge></TableCell>
+      <TableCell className="font-mono font-semibold">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span>{row.cable_code}</span>
+          {changeKind && <ChangedBadge kind={changeKind} />}
+        </div>
+      </TableCell>
+      <TableCell>
+        <div>{row.nama_fungsi}</div>
+        {row.warna_wajib && <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs mt-0.5">Warna Wajib</Badge>}
+      </TableCell>
     </TableRow>
   );
 }
