@@ -9,8 +9,9 @@ ARG REACT_APP_BACKEND_URL=""
 ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
 
 # Install deps first for better cache.
-# Note: yarn.lock is intentionally NOT committed to this repo (Emergent-generated on the fly).
-# We fall back to plain `yarn install` so Docker builds succeed without it.
+# Only copy package.json (not yarn.lock) so builds succeed whether or not the lockfile
+# is present in the repo. Emergent regenerates yarn.lock on the fly locally, so we don't
+# rely on it inside the image.
 COPY package.json ./
 RUN yarn install --network-timeout 600000
 
