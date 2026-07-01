@@ -28,6 +28,9 @@ services:
       CORS_ORIGINS: "*"
       APP_NAME: relaylab
       EMERGENT_LLM_KEY: ${EMERGENT_LLM_KEY}
+      # Set to "true" ONLY when serving over HTTPS. Keep "false" for plain HTTP
+      # (localhost or custom hostnames like http://relaylab-production).
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     networks:
       - relaylab-net
     expose:

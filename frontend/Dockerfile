@@ -8,9 +8,11 @@ WORKDIR /app
 ARG REACT_APP_BACKEND_URL=""
 ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
 
-# Install deps first for better cache
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --network-timeout 600000
+# Install deps first for better cache.
+# Note: yarn.lock is intentionally NOT committed to this repo (Emergent-generated on the fly).
+# We fall back to plain `yarn install` so Docker builds succeed without it.
+COPY package.json ./
+RUN yarn install --network-timeout 600000
 
 # Copy sources and build
 COPY . .

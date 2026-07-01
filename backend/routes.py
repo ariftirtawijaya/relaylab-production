@@ -19,6 +19,18 @@ from auth import (
 router = APIRouter(prefix="/api")
 
 
+def _cookie_secure() -> bool:
+    """Whether to set the `Secure` flag on the session cookie.
+
+    Controlled by COOKIE_SECURE env var. Default: false so the app works out-of-the-box
+    on plain HTTP local hostnames (e.g. http://relaylab-production). Set to `true` when
+    deploying behind HTTPS. Accepts: 1/true/yes/on (case-insensitive).
+    """
+    import os as _os
+    val = (_os.environ.get("COOKIE_SECURE") or "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
 def get_db(request: Request):
     return request.app.state.db
 
@@ -124,7 +136,7 @@ async def login(payload: LoginInput, request: Request, response: Response):
         max_age=SESSION_DAYS * 24 * 3600,
         httponly=True,
         samesite="lax",
-        secure=True,
+        secure=_cookie_secure(),
         path="/",
     )
     return {"user": UserOut(**user).model_dump()}
@@ -136,7 +148,7 @@ async def logout(request: Request, response: Response):
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         await db.sessions.delete_one({"token": token})
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(SESSION_COOKIE, path="/", samesite="lax", secure=_cookie_secure(), httponly=True)
     return {"ok": True}
 
 

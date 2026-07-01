@@ -31,13 +31,14 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Isi `EMERGENT_LLM_KEY` dengan kunci dari Emergent Profile → Universal Key.
+Isi `EMERGENT_LLM_KEY` dengan kunci dari Emergent Profile → Universal Key. Biarkan `COOKIE_SECURE=false` (kecuali Anda deploy di HTTPS).
 
 ```env
 EMERGENT_LLM_KEY=sk-emergent-xxxxxxxxxxxxxxxxx
+COOKIE_SECURE=false
 ```
 
-> Tanpa key ini upload foto **akan gagal** (Object Storage). Master data, login, WO, cutting sheet, dst tetap bisa jalan.
+> Tanpa `EMERGENT_LLM_KEY` upload foto **akan gagal** (Object Storage). Master data, login, WO, cutting sheet, dst tetap bisa jalan.
 
 ### 3. Build & start semua container
 ```powershell
@@ -64,6 +65,31 @@ http://192.168.x.x
 ```
 
 (ganti dengan IP Windows Anda dari `ipconfig`)
+
+### Custom Local Hostname (opsional)
+
+Anda bisa memakai hostname yang lebih ramah, misal `http://relaylab-production`:
+
+1. Edit file `C:\Windows\System32\drivers\etc\hosts` (buka Notepad **sebagai Administrator**), tambahkan:
+   ```
+   127.0.0.1  relaylab-production
+   ```
+2. Buka `http://relaylab-production` di browser — aplikasi harus langsung jalan.
+
+> ⚠️ **PENTING — Kalau login berhasil tapi API balikin `{"detail":"Belum login"}`:**
+> Ini karena browser menolak mengirim session cookie yang punya flag `Secure` di URL non-HTTPS.
+> Solusi: pastikan `COOKIE_SECURE=false` di file `.env` Anda (default), lalu restart:
+> ```powershell
+> docker compose restart backend
+> ```
+
+### Kalau nanti pakai HTTPS
+
+Kalau Anda taruh Nginx/Caddy/Traefik reverse-proxy dengan sertifikat SSL di depan aplikasi ini, ubah `.env`:
+```env
+COOKIE_SECURE=true
+```
+lalu `docker compose restart backend`. Ini akan meng-set flag `Secure` pada cookie sehingga tidak bisa dikirim via HTTP (mitigasi session hijacking).
 
 ---
 
@@ -168,6 +194,19 @@ Aplikasi lain (IIS, Skype lama, dll) pakai port 80. Solusi:
 1. Cek container backend hidup: `docker compose ps`
 2. Lihat log: `docker compose logs backend`
 3. Tunggu ±15 detik setelah `up` — backend butuh waktu init connection ke MongoDB
+
+### Login sukses tapi API balikin `{"detail":"Belum login"}` (custom hostname)
+Terjadi kalau Anda akses via `http://relaylab-production` (atau hostname lain) TAPI `COOKIE_SECURE=true` di `.env`. Browser menolak mengirim session cookie ber-flag `Secure` di koneksi non-HTTPS.
+
+**Fix:** buka `.env`, pastikan:
+```env
+COOKIE_SECURE=false
+```
+lalu restart backend:
+```powershell
+docker compose restart backend
+```
+Bersihkan cookie di browser (F12 → Application → Cookies → hapus `rl_session`), login ulang.
 
 ### "Upload foto gagal"
 - Cek `.env` Anda — `EMERGENT_LLM_KEY` sudah benar?
