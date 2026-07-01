@@ -31,7 +31,7 @@ export default function Login() {
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-slate-50">
       <div className="hidden lg:flex relative bg-slate-900 text-slate-50 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 bg-grid opacity-90" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 opacity-90" />
         <div className="relative z-10 p-12 flex flex-col justify-between w-full">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-md bg-amber-500 grid place-items-center">
@@ -43,9 +43,8 @@ export default function Login() {
             </div>
           </div>
           <div className="space-y-5 max-w-md">
-            <h2 className="text-3xl font-bold tracking-tight leading-tight">
-              Dokumentasi produksi.<br />
-              Tanpa owner ikut potong kabel.
+            <h2 className="text-4xl font-bold tracking-tight leading-tight">
+              RelayLab Production System
             </h2>
             <p className="text-slate-300 text-sm leading-relaxed">
               Sistem Dokumentasi dan Workflow Produksi RelayLab. Kelola Work Order, Cutting Sheet,
@@ -117,12 +116,6 @@ export default function Login() {
           >
             {loading ? "Memproses..." : "Masuk"}
           </Button>
-          <div className="text-xs text-slate-400 leading-relaxed border-t pt-4">
-            <div className="font-semibold text-slate-500 mb-1">Akun demo:</div>
-            <div>arif / admin123 (Admin)</div>
-            <div>redi / prod123 (Production)</div>
-            <div>leni / qc123 (QC)</div>
-          </div>
         </form>
       </div>
     </div>
