@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { PageHeader, StatusBadge, Section } from "@/components/Common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from "@/components/ui/table";
@@ -17,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth, hasRole } from "@/lib/auth";
 import {
   ArrowLeft, Printer, Scissors, CheckCircle2, AlertTriangle,
-  Package, ClipboardCheck, Plug, QrCode,
+  Package, ClipboardCheck, Plug, QrCode, Trash2,
 } from "lucide-react";
 import { WO_STATUSES, fmtDate, fmtDateTime } from "@/lib/utils-app";
 import { toast } from "sonner";
@@ -27,6 +31,7 @@ import ImageUploader from "@/components/ImageUploader";
 export default function WorkOrderDetail() {
   const { woNumber } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [bundles, setBundles] = useState([]);
   const [qc, setQc] = useState(null);
@@ -50,6 +55,16 @@ export default function WorkOrderDetail() {
     await api.put(`/work-orders/${woNumber}`, { status: s });
     toast.success(`Status -> ${s}`);
     load();
+  };
+
+  const deleteWo = async () => {
+    try {
+      await api.delete(`/work-orders/${woNumber}`);
+      toast.success(`WO ${woNumber} dihapus.`);
+      navigate("/work-orders");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal menghapus WO");
+    }
   };
 
   const markCuttingDone = async () => {
@@ -102,6 +117,36 @@ export default function WorkOrderDetail() {
                   {WO_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                 </SelectContent>
               </Select>
+            )}
+            {hasRole(user, "Admin") && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button data-testid="delete-wo-btn" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
+                    <Trash2 className="w-4 h-4 mr-2" />Hapus WO
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent data-testid="delete-wo-dialog">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Hapus Work Order {wo.wo_number}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Batch warna, hasil QC, dan progress operator akan ikut terhapus. Foto QC
+                      evidence akan di-soft-delete (metadata dihapus, file di storage tetap ada).
+                      <br /><br />
+                      <strong>Tindakan ini tidak bisa di-undo.</strong>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid="delete-wo-cancel">Batal</AlertDialogCancel>
+                    <AlertDialogAction
+                      data-testid="delete-wo-confirm"
+                      onClick={deleteWo}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      Ya, Hapus
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
         }

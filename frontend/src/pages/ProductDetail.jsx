@@ -9,9 +9,14 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useAuth, hasRole } from "@/lib/auth";
-import { ArrowLeft, CheckCircle2, AlertTriangle, Plug, Pencil, GitCompareArrows } from "lucide-react";
+import { ArrowLeft, CheckCircle2, AlertTriangle, Plug, Pencil, GitCompareArrows, Trash2 } from "lucide-react";
 import { fmtDate } from "@/lib/utils-app";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import RecipeEditor from "@/components/editors/RecipeEditor";
 import BundleEditor from "@/components/editors/BundleEditor";
 import PinMapEditor from "@/components/editors/PinMapEditor";
@@ -23,6 +28,7 @@ import { GitBranch } from "lucide-react";
 export default function ProductDetail() {
   const { sku } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [recipe, setRecipe] = useState([]);
   const [bundles, setBundles] = useState([]);
@@ -62,6 +68,16 @@ export default function ProductDetail() {
     } catch (e) { toast.error("Gagal"); }
   };
 
+  const deleteProduct = async () => {
+    try {
+      await api.delete(`/products/${sku}`);
+      toast.success(`Produk ${sku} dihapus.`);
+      navigate("/products");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal menghapus produk");
+    }
+  };
+
   if (!product) return <div className="text-slate-400">Memuat...</div>;
 
   return (
@@ -86,6 +102,38 @@ export default function ProductDetail() {
             )}
             {hasRole(user, "Admin") && product.status !== "Released" && (
               <Button data-testid="approve-product" onClick={approve} className="bg-emerald-600 hover:bg-emerald-700 text-white"><CheckCircle2 className="w-4 h-4 mr-2" />Approve Released</Button>
+            )}
+            {hasRole(user, "Admin") && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button data-testid="delete-product-btn" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
+                    <Trash2 className="w-4 h-4 mr-2" />Hapus Produk
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent data-testid="delete-product-dialog">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Hapus produk {product.sku}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Semua sub-data (recipe, bundle, work instruction, pin map, QC template, common
+                      mistakes, revisi) akan ikut terhapus. Foto referensi akan di-soft-delete (metadata
+                      dihapus, file di storage aman untuk produk lain yang share foto).
+                      <br /><br />
+                      <strong>Tindakan ini tidak bisa di-undo.</strong> Sistem akan menolak jika masih
+                      ada Work Order atau versi turunan yang merujuk produk ini.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid="delete-product-cancel">Batal</AlertDialogCancel>
+                    <AlertDialogAction
+                      data-testid="delete-product-confirm"
+                      onClick={deleteProduct}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      Ya, Hapus
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
         }

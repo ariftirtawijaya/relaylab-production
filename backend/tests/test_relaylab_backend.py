@@ -1568,3 +1568,155 @@ class TestCuttingSheetSort:
         assert size05[-1]["cable_code"] == target["cable_code"], \
             f"after substituting to 'Zebra', cable should sort last in its ukuran group; got {[r['cable_code'] for r in size05]}"
 
+
+# ============ P3D: Delete Product & Delete WO ============
+class TestP3DDelete:
+    """Product delete (with cascade) + WO delete (with cascade)."""
+
+    NEW_SKU = "RFL-AOD-H11-DEL"
+    CHILD_SKU = "RFL-AOD-H11-DELCHILD"
+    wo_number: str = None
+
+    @classmethod
+    def teardown_class(cls):
+        # Nuclear cleanup
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        for coll in ("products", "product_cables", "product_bundles", "work_instructions",
+                     "relay_pin_maps", "qc_templates", "common_mistakes", "revision_history",
+                     "work_orders", "batch_colors", "qc_results", "operator_progress"):
+            db[coll].delete_many({"$or": [
+                {"sku": cls.NEW_SKU}, {"product_sku": cls.NEW_SKU},
+                {"sku": cls.CHILD_SKU}, {"product_sku": cls.CHILD_SKU},
+                {"wo_number": cls.wo_number} if cls.wo_number else {"wo_number": "_none_"},
+            ]})
+        db.file_assets.delete_many({"$or": [
+            {"product_sku": cls.NEW_SKU}, {"product_sku": cls.CHILD_SKU},
+        ]})
+        # Reset V1 in case it was made a parent
+        db.products.update_one({"sku": SRC_SKU}, {"$unset": {"version_group": "", "parent_sku": "", "source_sku": ""},
+                                                  "$set": {"status": "Released"}})
+
+    @pytest.fixture(scope="class")
+    def clone_v1_to_del(self, admin):
+        r = admin.post(f"{API}/products/{SRC_SKU}/clone", json={
+            "new_sku": self.NEW_SKU, "new_nama_produk": "Del Test",
+            "new_versi": "VDEL", "new_status": "Trial",
+            "copy_recipe": True, "copy_bundles": True, "copy_work_instructions": True,
+            "copy_pin_map": True, "copy_qc_template": True, "copy_common_mistakes": True,
+            "copy_photos": False, "hold_old": False,
+        })
+        assert r.status_code == 200, r.text
+        return self.NEW_SKU
+
+    # ---- Product delete ----
+    def test_delete_product_qc_forbidden(self, qc, clone_v1_to_del):
+        r = qc.delete(f"{API}/products/{clone_v1_to_del}")
+        assert r.status_code == 403
+
+    def test_delete_product_prod_forbidden(self, prod, clone_v1_to_del):
+        r = prod.delete(f"{API}/products/{clone_v1_to_del}")
+        assert r.status_code == 403
+
+    def test_delete_product_not_found(self, admin):
+        r = admin.delete(f"{API}/products/RFL-DOES-NOT-EXIST-XYZ")
+        assert r.status_code == 404
+
+    def test_delete_product_refuses_when_wo_exists(self, admin, prod, clone_v1_to_del):
+        # Create a WO on the product
+        r = prod.post(f"{API}/work-orders", json={
+            "product_sku": clone_v1_to_del, "qty": 1, "reseller": "Del Test", "prioritas": "Normal",
+        })
+        assert r.status_code == 200
+        wo_num = r.json()["wo_number"]
+        TestP3DDelete.wo_number = wo_num
+        # Try to delete product -> 409
+        r = admin.delete(f"{API}/products/{clone_v1_to_del}")
+        assert r.status_code == 409
+        assert "work order" in r.json()["detail"].lower() or "wo" in r.json()["detail"].lower()
+
+    def test_delete_wo_qc_forbidden(self, qc):
+        wo = TestP3DDelete.wo_number
+        assert wo, "predecessor test didn't run"
+        r = qc.delete(f"{API}/work-orders/{wo}")
+        assert r.status_code == 403
+
+    def test_delete_wo_prod_forbidden(self, prod):
+        wo = TestP3DDelete.wo_number
+        r = prod.delete(f"{API}/work-orders/{wo}")
+        assert r.status_code == 403
+
+    def test_delete_wo_not_found(self, admin):
+        r = admin.delete(f"{API}/work-orders/WO-XYZ-DOES-NOT-EXIST-123")
+        assert r.status_code == 404
+
+    def test_delete_wo_cascades(self, admin, prod):
+        wo = TestP3DDelete.wo_number
+        # Seed some data that should cascade
+        prod.post(f"{API}/work-orders/{wo}/batch-colors", json={
+            "cable_code": "DEV-OUT-L", "warna_aktual": "Merah",
+        })
+        prod.post(f"{API}/work-orders/{wo}/operator-progress", json={
+            "bundle_code": "A", "step_number": 1, "checked": True,
+        })
+        # Delete WO
+        r = admin.delete(f"{API}/work-orders/{wo}")
+        assert r.status_code == 200
+        # Verify gone + cascade rows gone
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        assert db.work_orders.count_documents({"wo_number": wo}) == 0
+        assert db.batch_colors.count_documents({"wo_number": wo}) == 0
+        assert db.operator_progress.count_documents({"wo_number": wo}) == 0
+        TestP3DDelete.wo_number = None  # cleaned
+
+    def test_delete_product_refuses_when_child_version_exists(self, admin, clone_v1_to_del):
+        # After WO is gone, still refuses because a child version was created earlier?
+        # No child yet — create one to test the parent-guard branch.
+        r = admin.post(f"{API}/products/{clone_v1_to_del}/clone", json={
+            "new_sku": self.CHILD_SKU, "new_nama_produk": "Child of Del",
+            "new_versi": "VCHLD", "new_status": "Trial",
+            "copy_recipe": False, "copy_bundles": False, "copy_work_instructions": False,
+            "copy_pin_map": False, "copy_qc_template": False, "copy_common_mistakes": False,
+            "copy_photos": False, "hold_old": False,
+        })
+        assert r.status_code == 200
+        # Try to delete parent -> 409
+        r = admin.delete(f"{API}/products/{clone_v1_to_del}")
+        assert r.status_code == 409
+        assert "turunan" in r.json()["detail"].lower() or "child" in r.json()["detail"].lower() or "parent" in r.json()["detail"].lower()
+
+    def test_delete_child_product_first_then_parent(self, admin, clone_v1_to_del):
+        # Delete child first
+        r = admin.delete(f"{API}/products/{self.CHILD_SKU}")
+        assert r.status_code == 200
+        # Now parent can be deleted
+        r = admin.delete(f"{API}/products/{clone_v1_to_del}")
+        assert r.status_code == 200, r.text
+        # Verify cascade
+        import pymongo, os
+        from dotenv import load_dotenv
+        load_dotenv("/app/backend/.env")
+        cli = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+        db = cli[os.environ.get("DB_NAME", "test_database")]
+        assert db.products.count_documents({"sku": clone_v1_to_del}) == 0
+        assert db.product_cables.count_documents({"product_sku": clone_v1_to_del}) == 0
+        assert db.product_bundles.count_documents({"product_sku": clone_v1_to_del}) == 0
+        assert db.work_instructions.count_documents({"product_sku": clone_v1_to_del}) == 0
+        assert db.relay_pin_maps.count_documents({"product_sku": clone_v1_to_del}) == 0
+        assert db.qc_templates.count_documents({"product_sku": clone_v1_to_del}) == 0
+        assert db.common_mistakes.count_documents({"product_sku": clone_v1_to_del}) == 0
+        assert db.revision_history.count_documents({"product_sku": clone_v1_to_del}) == 0
+
+    def test_seed_product_still_intact_after_all_deletes(self, admin):
+        # Sanity: RFL-AOD-H11-V1 (seed) must NEVER be affected
+        r = admin.get(f"{API}/products/{SRC_SKU}")
+        assert r.status_code == 200
+        assert r.json()["sku"] == SRC_SKU
+

@@ -286,6 +286,62 @@ def _suggest_next_sku(base_sku: str, existing: set) -> str:
     return f"{prefix}V{n}"
 
 
+@router.delete("/products/{sku}")
+async def delete_product(sku: str, request: Request, _: dict = Depends(require_roles("Admin"))):
+    """Hard-delete a product and ALL its sub-collections.
+
+    Refuses if any Work Order still references the SKU. Admin only.
+    Cascade covers: recipe (product_cables), bundles, work_instructions, relay_pin_maps,
+    qc_templates, common_mistakes, revision_history, file_assets metadata (soft-delete),
+    and operator_progress rows tied to WOs of this product (none by design if WO check passes).
+    Object storage files are NOT hard-deleted (soft-delete only) to remain safe with shared
+    storage_path from cloned products.
+    """
+    db = get_db(request)
+    product = await db.products.find_one({"sku": sku}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+
+    # Refuse if any WO still references this SKU
+    wo_count = await db.work_orders.count_documents({"product_sku": sku})
+    if wo_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Produk masih dipakai oleh {wo_count} Work Order. Hapus dulu WO tersebut, "
+                "atau clone dulu produk ini dan set status jadi Discontinued."
+            ),
+        )
+
+    # Refuse if this SKU is a source_sku for other products (protect version tree parent)
+    child_count = await db.products.count_documents({"$or": [{"parent_sku": sku}, {"source_sku": sku}]})
+    if child_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Produk ini adalah induk dari {child_count} versi turunan. Hapus dulu versi turunan "
+                "atau ubah parent_sku-nya sebelum menghapus produk ini."
+            ),
+        )
+
+    # Cascade delete sub-collections
+    await db.product_cables.delete_many({"product_sku": sku})
+    await db.product_bundles.delete_many({"product_sku": sku})
+    await db.work_instructions.delete_many({"product_sku": sku})
+    await db.relay_pin_maps.delete_many({"product_sku": sku})
+    await db.qc_templates.delete_many({"product_sku": sku})
+    await db.common_mistakes.delete_many({"product_sku": sku})
+    await db.revision_history.delete_many({"product_sku": sku})
+    # File assets: soft-delete (storage path may be shared with cloned products)
+    await db.file_assets.update_many(
+        {"product_sku": sku, "is_deleted": False},
+        {"$set": {"is_deleted": True}},
+    )
+    # Finally the product itself
+    await db.products.delete_one({"sku": sku})
+    return {"ok": True, "sku": sku}
+
+
 @router.get("/products/{sku}/suggest-version")
 async def suggest_version(sku: str, request: Request, _: dict = Depends(require_roles("Admin"))):
     db = get_db(request)
@@ -1062,9 +1118,20 @@ async def update_work_order(wo_number: str, payload: WorkOrderUpdateInput, reque
 @router.delete("/work-orders/{wo_number}")
 async def delete_work_order(wo_number: str, request: Request, _: dict = Depends(require_roles("Admin"))):
     db = get_db(request)
+    wo = await db.work_orders.find_one({"wo_number": wo_number}, {"_id": 0})
+    if not wo:
+        raise HTTPException(status_code=404, detail="WO tidak ditemukan")
     await db.work_orders.delete_one({"wo_number": wo_number})
     await db.batch_colors.delete_many({"wo_number": wo_number})
     await db.qc_results.delete_many({"wo_number": wo_number})
+    await db.operator_progress.delete_many({"wo_number": wo_number})
+    # QC evidence photos are per-WO: soft-delete their metadata (storage untouched)
+    await db.file_assets.update_many(
+        {"related_type": "qc_evidence",
+         "related_id": {"$regex": f"^{re.escape(wo_number)}:"},
+         "is_deleted": False},
+        {"$set": {"is_deleted": True}},
+    )
     return {"ok": True}
 
 
