@@ -67,6 +67,7 @@
             id="emergent-badge"
             data-emergent-only="true"
             target="_blank"
+            style="display: none"
             href="https://app.emergent.sh/?utm_source=emergent-badge"
             style="
                 display: inline-flex !important;
@@ -186,10 +187,10 @@
             } // end __RELAYLAB_IS_EMERGENT__ guard
         </script>
         <script>
-            // Hide the Emergent badge on self-hosted deployments.
-            if (!window.__RELAYLAB_IS_EMERGENT__) {
+            // Show the Emergent badge only when running on Emergent-owned domains.
+            if (window.__RELAYLAB_IS_EMERGENT__) {
                 var b = document.getElementById("emergent-badge");
-                if (b) b.style.display = "none";
+                if (b) b.style.display = "";
             }
         </script>
     </body>
