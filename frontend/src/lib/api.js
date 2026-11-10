@@ -1,6 +1,9 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const normalizeBasePath = (value) => (value || "").replace(/\/+$/, "");
+const BACKEND_URL = normalizeBasePath(
+  process.env.REACT_APP_BACKEND_URL || process.env.PUBLIC_URL || "",
+);
 export const API = `${BACKEND_URL}/api`;
 
 export const api = axios.create({

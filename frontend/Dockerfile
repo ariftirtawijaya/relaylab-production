@@ -3,10 +3,11 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Backend URL is baked into the build (CRA env vars are compile-time).
-# Empty value => api.js produces "/api" (same-origin via Nginx proxy).
+# Build-time frontend URLs. Empty PUBLIC_URL serves the app from /.
 ARG REACT_APP_BACKEND_URL=""
+ARG PUBLIC_URL=""
 ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
+ENV PUBLIC_URL=${PUBLIC_URL}
 
 # Install deps first for better cache.
 # Only copy package.json (not yarn.lock) so builds succeed whether or not the lockfile

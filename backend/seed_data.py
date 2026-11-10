@@ -1,4 +1,6 @@
 """Seed data for RelayLab Production System - Foglamp AOD product."""
+import os
+
 from auth import hash_password
 from models import (
     UserDoc, Product, CableFunction, MachineProgram,
@@ -15,27 +17,27 @@ def seed_users():
     return [
         UserDoc(
             name="Arif", username="arif", email="arif@relaylab.local",
-            password_hash=hash_password("admin123"), role="Admin",
+            password_hash=hash_password(os.environ.get("SEED_ADMIN_PASSWORD") or "admin123"), role="Admin",
         ),
         UserDoc(
             name="Redi", username="redi", email="redi@relaylab.local",
-            password_hash=hash_password("prod123"), role="Production",
+            password_hash=hash_password(os.environ.get("SEED_PRODUCTION_PASSWORD") or "prod123"), role="Production",
         ),
         UserDoc(
             name="Leni", username="leni", email="leni@relaylab.local",
-            password_hash=hash_password("qc123"), role="QC",
+            password_hash=hash_password(os.environ.get("SEED_QC_PASSWORD") or "qc123"), role="QC",
         ),
         UserDoc(
             name="Windu", username="windu", email="windu@relaylab.local",
-            password_hash=hash_password("prod123"), role="Production",
+            password_hash=hash_password(os.environ.get("SEED_PRODUCTION_PASSWORD") or "prod123"), role="Production",
         ),
         UserDoc(
             name="Dede", username="dede", email="dede@relaylab.local",
-            password_hash=hash_password("prod123"), role="Production",
+            password_hash=hash_password(os.environ.get("SEED_PRODUCTION_PASSWORD") or "prod123"), role="Production",
         ),
         UserDoc(
             name="Fauzi", username="fauzi", email="fauzi@relaylab.local",
-            password_hash=hash_password("prod123"), role="Production",
+            password_hash=hash_password(os.environ.get("SEED_PRODUCTION_PASSWORD") or "prod123"), role="Production",
         ),
     ]
 

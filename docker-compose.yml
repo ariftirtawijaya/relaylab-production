@@ -25,11 +25,13 @@ services:
     environment:
       MONGO_URL: mongodb://mongo:27017
       DB_NAME: relaylab_production
-      CORS_ORIGINS: "*"
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
       APP_NAME: relaylab
       EMERGENT_LLM_KEY: ${EMERGENT_LLM_KEY}
-      # Set to "true" ONLY when serving over HTTPS. Keep "false" for plain HTTP
-      # (localhost or custom hostnames like http://relaylab-production).
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
+      SEED_PRODUCTION_PASSWORD: ${SEED_PRODUCTION_PASSWORD:-prod123}
+      SEED_QC_PASSWORD: ${SEED_QC_PASSWORD:-qc123}
+      # Set to "true" ONLY when serving over HTTPS.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     networks:
       - relaylab-net
@@ -41,14 +43,16 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Empty value -> api.js produces "/api" (same-origin via Nginx proxy)
-        REACT_APP_BACKEND_URL: ""
+        # Empty values serve at the domain root. For a subpath deployment, set
+        # both PUBLIC_URL and REACT_APP_BACKEND_URL to that path (e.g. /production).
+        PUBLIC_URL: ${PUBLIC_URL:-}
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-}
     container_name: relaylab-frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "80:80"
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-80}:80"
     networks:
       - relaylab-net
 
