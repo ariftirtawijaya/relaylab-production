@@ -29,15 +29,15 @@ def seed_users():
         ),
         UserDoc(
             name="Windu", username="windu", email="windu@relaylab.local",
-            password_hash=hash_password("prod123"), role="Production",
+            password_hash=hash_password(os.environ.get("SEED_PRODUCTION_PASSWORD") or "prod123"), role="Production",
         ),
         UserDoc(
             name="Dede", username="dede", email="dede@relaylab.local",
-            password_hash=hash_password("prod123"), role="Production",
+            password_hash=hash_password(os.environ.get("SEED_PRODUCTION_PASSWORD") or "prod123"), role="Production",
         ),
         UserDoc(
             name="Fauzi", username="fauzi", email="fauzi@relaylab.local",
-            password_hash=hash_password("prod123"), role="Production",
+            password_hash=hash_password(os.environ.get("SEED_PRODUCTION_PASSWORD") or "prod123"), role="Production",
         ),
     ]
 
